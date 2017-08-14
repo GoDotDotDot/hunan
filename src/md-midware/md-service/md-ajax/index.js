@@ -25,6 +25,7 @@ const request = (method, url, data, config = {}) => {
         // baseURL: window.AppConf.apiHost
   })
   options.headers = options.headers || {}
+
   return new Promise((resolve, reject) => {
     if (options.cache) {
       let key = serializeRequest(options.url, options.data)
