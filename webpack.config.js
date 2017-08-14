@@ -274,7 +274,10 @@ module.exports = function (env) {
     // 浏览器全屏显示编译器错误信息
       overlay: true,
     // 公共文件，浏览器可直接访问，HMR必须
-      publicPath: '/'
+      publicPath: '/',
+      proxy: {
+        '/': 'http://192.168.19.50:8080'
+      }
     }
   }
 }

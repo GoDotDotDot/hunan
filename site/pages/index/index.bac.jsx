@@ -8,7 +8,13 @@ import 'element-theme-default'
 import '../../styles/color.css'
 import './index.css'
 import { outerHeight, outerWidth, getOffsetLeft, getOffsetTop } from '../../../utils/dom/domFns'
-import { Select, Button, Table, Checkbox, Tag } from 'antd'
+<<<<<<< HEAD
+import { Select, Button, Table, Checkbox } from 'antd'
+
+const position = [51.505, -0.09]
+=======
+import { Select, Button, Table, Checkbox, Tag, Popover} from 'antd'
+>>>>>>> f75f5ec4eab462f14f41b59ed2d5ae297940d8c1
 
 const position = [15.3, 134.6]
 const DASH_POLYLINE_COLOR = {
