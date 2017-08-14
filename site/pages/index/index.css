@@ -201,11 +201,8 @@
 
 
 .wind-explain{
-    /* position: absolute;
-    z-index: 10000;
-    bottom: 100px;
-    right: 50px;
-    font-size: small; */
+    margin-left: 5px;
+    font-size: small;
 }
 .wind-explain-color{
     width: 15px;
@@ -222,4 +219,28 @@
 }
 .ant-table-small table{
     font-size: 12px
+}
+
+.ct-pre-title{
+    background-color: #e5e9f2;
+    margin: 10px -5px;
+    padding: 5px 10px;
+    font-size: 15px;
+}
+.ct-pre-content{
+    display: grid;
+    margin-left: 5px;
+}
+.ct-pre-cont-dash{
+    margin-left: 40px;
+    display: inline-block;
+    border-top: 2px dashed #666;
+    width: 50px;
+    height: 5px;
+}
+.partirion-line{
+     margin: 25px -5px 10px;
+}
+.add-content{
+    display: grid;
 }

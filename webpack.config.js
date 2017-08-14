@@ -1,6 +1,5 @@
 /**
  *METE DESIGN WEBPACK V3.1 CONFIGURES
- *GitHub:https://github.com/MeteDesign/Webpack
  *METE DESIGN GROUP
  *SUPERMAP METEOROLOGY DEPARTMENT
  *储奎 / KUI CHU
@@ -14,22 +13,16 @@ const webpack = require('webpack')
 const path = require('path')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 const ExtractTextPlugin = require('extract-text-webpack-plugin')
-const ChunkManifestPlugin = require('chunk-manifest-webpack-plugin')
-// const ScriptExtHtmlWebpackPlugin = require('script-ext-html-webpack-plugin')
-// const PreloadWebpackPlugin = require('preload-webpack-plugin')
-// const UglifyJSPlugin = require('uglifyjs-webpack-plugin')
-// const AddAssetHtmlPlugin = require('add-asset-html-webpack-plugin')
-const InlineManifestWebpackPlugin = require('inline-manifest-webpack-plugin')
-const InlineChunkManifestHtmlWebpackPlugin = require('inline-chunk-manifest-html-webpack-plugin')
-// const CompressionPlugin = require('compression-webpack-plugin')
+const AddAssetHtmlPlugin = require('add-asset-html-webpack-plugin')
+const CleanWebpackPlugin = require('clean-webpack-plugin')
 /**
  * global variable of config
  */
 // replace localhost with 0.0.0.0 if you want to access
 // your app from wifi or a virtual machine
 const host = process.env.HOST || '0.0.0.0'
-const port = process.env.PORT || 80
-const allowedHosts = ['192.168.19.166']
+const port = process.env.PORT || 8080
+const allowedHosts = ['192.168.19.61']
 const sourcePath = path.join(__dirname, './site')
 const distPath = path.join(__dirname, './dist')
 const htmlTemplate = './index.template.ejs'
@@ -55,7 +48,7 @@ module.exports = function (env) {
   const isProd = nodeEnv === 'production'
   /**
    * Mete Design Webpack V3.1 Buiding Informations
-  */
+   */
   console.log('--------------Mete Design Webpack V3.1--------------')
   console.log('enviroment:' + nodeEnv)
   console.log('host:' + host)
@@ -69,12 +62,12 @@ module.exports = function (env) {
   const plugins = [
     new webpack.optimize.CommonsChunkPlugin({
       // vendor chunk
-      names: ['manifest', 'vendor'].reverse() // the name of bundle
+      name: 'vendor' // the name of bundle
     }),
-    // new webpack.optimize.CommonsChunkPlugin({
-    //   name: 'manifest',
-    //   minChunks: Infinity
-    // }),
+    new webpack.optimize.CommonsChunkPlugin({
+      name: 'manifest',
+      minChunks: Infinity
+    }),
 
     // setting production environment will strip out
     // some of the development code from the app
@@ -83,12 +76,8 @@ module.exports = function (env) {
       'process.env': { NODE_ENV: JSON.stringify(nodeEnv) }
     }),
 
-    // preload chunks
-    // new PreloadWebpackPlugin(),
-
     // create css bundle
-    // allChunks set true is for code splitting
-    new ExtractTextPlugin({filename: 'css/[name]-[contenthash].css', allChunks: true}),
+    new ExtractTextPlugin({filename: isProd ? 'css/[name]-[contenthash].css' : 'css/[name].css', allChunks: true}),
 
     // create index.html
     new HtmlWebpackPlugin({
@@ -107,48 +96,36 @@ module.exports = function (env) {
         minifyCSS: true,
         minifyURLs: true
       }
-    }),
-     // make sure script tags are async to avoid blocking html render
-    // ---!!!has remove!!!---
-    // new ScriptExtHtmlWebpackPlugin({
-    //   defaultAttribute: 'async'
-    // })
-    new InlineManifestWebpackPlugin({
-      name: 'webpackManifest'
-    }),
-    new InlineChunkManifestHtmlWebpackPlugin({
-      manifestPlugins: [
-        new ChunkManifestPlugin({
-          filename: 'manifest.json',
-          manifestVariable: 'webpackManifest',
-          inlineManifest: false
-        })
-      ]
     })
+    // new InlineManifestWebpackPlugin({
+    //   name: 'webpackManifest'
+    // }),
+    // new InlineChunkManifestHtmlWebpackPlugin()
   ]
   if (isProd) {
     /**
      * production envrioment plugin
      */
     plugins.push(
+      new webpack.optimize.ModuleConcatenationPlugin(),
+      new CleanWebpackPlugin(['dist']),
+      new webpack.HashedModuleIdsPlugin(),
       // minify remove some of the dead code
-      new webpack.optimize.UglifyJsPlugin({
-        compress: {
-          warnings: false,
-          screw_ie8: true,
-          conditionals: true,
-          unused: true,
-          comparisons: true,
-          sequences: true,
-          dead_code: true,
-          evaluate: true,
-          if_return: true,
-          join_vars: true
-        },
-        mangle: false
-      }),
-      new webpack.optimize.ModuleConcatenationPlugin()
-    )
+     new webpack.optimize.UglifyJsPlugin({
+       compress: {
+         warnings: false,
+         screw_ie8: true,
+         conditionals: true,
+         unused: true,
+         comparisons: true,
+         sequences: true,
+         dead_code: true,
+         evaluate: true,
+         if_return: true,
+         join_vars: true
+       },
+       mangle: false
+     }))
   } else {
     /**
      * development enviroment plugin
@@ -163,11 +140,13 @@ module.exports = function (env) {
       // load DLL files
       // new webpack.DllReferencePlugin({context: __dirname, manifest: require('./dll/react_manifest.json')}),
       // new webpack.DllReferencePlugin({context: __dirname, manifest: require('./dll/react_dom_manifest.json')}),
+      // new webpack.DllReferencePlugin({context: __dirname, manifest: require('./dll/react_router_dom_manifest.json')}),
       // // make DLL assets available for the app to download
-      //  new AddAssetHtmlPlugin([
+      // new AddAssetHtmlPlugin([
       //   { filepath: require.resolve('./dll/react.dll.js') },
-      //   { filepath: require.resolve('./dll/react_dom.dll.js') }
-      //  ])
+      //   { filepath: require.resolve('./dll/react_dom.dll.js') },
+      //   { filepath: require.resolve('./dll/react_router_dom.dll.js') }
+      // ])
     )
   }
   return {
@@ -278,7 +257,7 @@ module.exports = function (env) {
     // webpack dev server
     devServer: {
     // 文件路劲，一般静态文件需要
-      contentBase: '/',
+      contentBase: path.join(__dirname, 'src'),
     // 是否启用gzip压缩
       compress: true,
     // 是否启用热替换
@@ -295,10 +274,7 @@ module.exports = function (env) {
     // 浏览器全屏显示编译器错误信息
       overlay: true,
     // 公共文件，浏览器可直接访问，HMR必须
-      publicPath: '/',
-      proxy: {
-        '/': 'http://192.168.19.50:8080'
-      }
+      publicPath: '/'
     }
   }
 }
