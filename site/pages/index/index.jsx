@@ -4,11 +4,12 @@ import { Map, Marker, Popup, TileLayer, Polyline, Circle, CircleMarker } from 'r
 import md_ajax from 'md_midware/md-service/md-ajax'
 import Window from 'md_components/panel'
 import {NowCircleMarker, ForecastCircleMarker} from 'md_components/circle_marker'
+import {TruthPolyline, ForecastPolyline} from 'md_components/polyline'
 import 'element-theme-default'
 import '../../styles/color.css'
 import './index.css'
 import { outerHeight, outerWidth, getOffsetLeft, getOffsetTop } from '../../../utils/dom/domFns'
-import { Select, Button, Table, Checkbox, Tag } from 'antd'
+import { Select, Button, Table, Checkbox, Tag, Popover} from 'antd'
 
 const position = [15.3, 134.6]
 const DASH_POLYLINE_COLOR = {
@@ -36,8 +37,8 @@ export default class Home extends React.Component {
         {value: '2016', label: '2016'},
         {value: '2015', label: '2015'},
         {value: '2014', label: '2014'}
-      ],
-      checkList: ['selectA']
+
+      ]
     }
     this.handleYearChange = this.handleYearChange.bind(this)
     this.handleSelectTyphoon = this.handleSelectTyphoon.bind(this)
@@ -58,7 +59,7 @@ export default class Home extends React.Component {
     this.handleYearChange(this.state.yearsList[0].value)
   }
   postHttpRequest (dt, url) {
-    let fd = new URLSearchParams()
+    let fd = new window.URLSearchParams()
     fd.append('para', dt)
     return md_ajax.post(url, fd, {
       'headers': {
@@ -285,11 +286,11 @@ export default class Home extends React.Component {
             bounds='#aa'
             title='图例'
             className='md-drag--container'
-            defaultPosition={{x: rectRight - 220, y: rectBottom - 400}}
+            defaultPosition={{x: rectRight - 220, y: rectBottom - 300}}
             mini
             disable
             width={220}
-            height={400}
+            height={300}
           >
             <div className='wind-explain'>
               <div><span><span className='wind-explain-text'>热带低压</span><div className='wind-explain-color' style={{backgroundColor: 'rgb(39, 218, 34)'}} />小于17.2米/秒</span></div>
@@ -298,22 +299,6 @@ export default class Home extends React.Component {
               <div><span><span className='wind-explain-text'>台风</span> <div className='wind-explain-color' style={{backgroundColor: 'rgb(228, 141, 56)'}} />32.7 - 41.4米/秒</span></div>
               <div><span><span className='wind-explain-text'>强台风</span> <div className='wind-explain-color' style={{backgroundColor: 'rgb(239, 116, 219)'}} />41.5 - 50.9米/秒</span></div>
               <div><span><span className='wind-explain-text'>超强台风</span> <div className='wind-explain-color' style={{backgroundColor: 'rgb(234, 41, 41)'}} />大于51.0米/秒</span></div>
-            </div>
-            <div className='country-predicte'>
-              <div className='ct-pre-title'>主观预报</div>
-              <div className='ct-pre-content'>
-                <Checkbox defaultChecked>中国<span className='ct-pre-cont-dash' style={{borderTopColor: '#ef0a0a'}} /></Checkbox>
-                <Checkbox defaultChecked>美国<span className='ct-pre-cont-dash' style={{borderTopColor: 'rgb(219, 21, 224)'}} /></Checkbox>
-                <Checkbox defaultChecked>日本<span className='ct-pre-cont-dash' style={{borderTopColor: 'rgb(91, 217, 228)'}} /></Checkbox>
-                <Checkbox defaultChecked>香港<span className='ct-pre-cont-dash' style={{borderTopColor: 'rgb(239, 229, 9)'}} /></Checkbox>
-                <Checkbox defaultChecked>台湾<span className='ct-pre-cont-dash' style={{borderTopColor: 'rgb(128, 85, 13)'}} /></Checkbox>
-              </div>
-            </div>
-            <hr className='partirion-line' />
-            <div className='add-content' >
-              <Checkbox>台风标注</Checkbox>
-              <Checkbox defaultChecked>选中动画</Checkbox>
-              <Checkbox>风圈半径</Checkbox>
             </div>
           </Window.Item>
           <Window.Item

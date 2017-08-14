@@ -16,6 +16,79 @@ const getCircleColorBySpeed = (val) => {
   }
   if (!flag) return CIRCLE_COLOR[5]
 }
+const TruthPopupTemp = (props) => {
+  const { radius_7, wind_power, radius_10, grade, move_speed, name_cn, longitude, latitude, datetime, pressure, move_direction } = props
+  return <Popup>
+    <div className='md-circleMarker-container'>
+      <span className='title'>{name_cn}</span>
+      <div className='info-container'>
+        <div className='info-row'>
+          <lable className='info-row--lable'>历史时间</lable>
+          <span className='info-row--span'>{datetime}</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>经纬坐标</lable>
+          <span className='info-row--span'>{`${longitude}E/${latitude}N"`}</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>中心气压</lable>
+          <span className='info-row--span'>{pressure}百帕</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>风力</lable>
+          <span className='info-row--span'>{wind_power}米/秒</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>风级</lable>
+          <span className='info-row--span'>{grade}</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>风速</lable>
+          <span className='info-row--span'>{move_speed}千米/时</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>移动方向</lable>
+          <span className='info-row--span'>{move_direction || 'null'}</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>7级风圈半径</lable>
+          <span className='info-row--span'>{radius_7}公里</span>
+        </div>
+        <div className='info-row'>
+          <lable className='info-row--lable'>10级风圈半径</lable>
+          <span className='info-row--span'>{radius_10 || 'null'}公里</span>
+        </div>
+
+      </div>
+    </div>
+
+  </Popup>
+}
+const ForecastPopupTemp = (props) => { }
+const TruthCircleMarker = (props) => {
+  const { color, fill, fillOpacity = 1, center, radius = 5, ...data } = props
+  let _ref
+  return <CircleMarker
+    center
+    color={getCircleColorBySpeed(data.move_speed)}
+    radius
+    fill
+    fillOpacity
+    ref={(ref) => { _ref = ref }}
+    onMouseOver={(e) => { handleMouseOver(e, _ref) }}
+    >
+    <TruthPopupTemp data />
+  </CircleMarker>
+}
+const ForecastCircleMarker1 = (props) => { }
+/**
+ * 鼠标移上CircleMarker处理事件
+ * @param {Event} e
+ * @param {Object} ref
+ */
+const handleMouseOver = (e, ref) => {
+  ref.leafletElement.openPopup()
+}
 export class NowCircleMarker extends React.Component {
   handleMouseOver (e) {
     this.ref.leafletElement.openPopup()
@@ -123,3 +196,4 @@ export class ForecastCircleMarker extends React.Component {
     )
   }
 }
+export {TruthCircleMarker}
