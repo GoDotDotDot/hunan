@@ -17,7 +17,8 @@ const getCircleColorBySpeed = (val) => {
   if (!flag) return CIRCLE_COLOR[5]
 }
 const TruthPopupTemp = (props) => {
-  const { radius_7, wind_power, radius_10, grade, move_speed, name_cn, longitude, latitude, datetime, pressure, move_direction } = props
+  const _data = props.data
+  const { radius_7, wind_power, radius_10, grade, move_speed, name_cn, longitude, latitude, datetime, pressure, move_direction } = _data
   return <Popup>
     <div className='md-circleMarker-container'>
       <span className='title'>{name_cn}</span>
@@ -66,18 +67,25 @@ const TruthPopupTemp = (props) => {
 }
 const ForecastPopupTemp = (props) => { }
 const TruthCircleMarker = (props) => {
-  const { color, fill, fillOpacity = 1, center, radius = 5, ...data } = props
+  /**
+   * props
+   * @param {String} color
+   * @param {Array} center
+   * @param {Object} data
+   */
+  const { color, fill = true, fillOpacity = 1, center, radius = 5, data, _key } = props
   let _ref
   return <CircleMarker
-    center
-    color={getCircleColorBySpeed(data.move_speed)}
-    radius
-    fill
-    fillOpacity
+    center={center}
+    color={color || getCircleColorBySpeed(data.move_speed)}
+    radius={radius}
+    fill={fill}
+    fillOpacity={fillOpacity}
     ref={(ref) => { _ref = ref }}
     onMouseOver={(e) => { handleMouseOver(e, _ref) }}
+    key={_key}
     >
-    <TruthPopupTemp data />
+    <TruthPopupTemp data={data} />
   </CircleMarker>
 }
 const ForecastCircleMarker1 = (props) => { }

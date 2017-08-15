@@ -21,8 +21,8 @@ const CleanWebpackPlugin = require('clean-webpack-plugin')
 // replace localhost with 0.0.0.0 if you want to access
 // your app from wifi or a virtual machine
 const host = process.env.HOST || '0.0.0.0'
-const port = process.env.PORT || 8080
-const allowedHosts = ['192.168.19.61']
+const port = process.env.PORT || 80
+const allowedHosts = ['192.168.19.166']
 const sourcePath = path.join(__dirname, './site')
 const distPath = path.join(__dirname, './dist')
 const htmlTemplate = './index.template.ejs'
@@ -276,7 +276,7 @@ module.exports = function (env) {
     // 公共文件，浏览器可直接访问，HMR必须
       publicPath: '/',
       proxy: {
-        '/': 'http://192.168.19.50:8080'
+        '/': 'http://192.168.11.61:8081'
       }
     }
   }

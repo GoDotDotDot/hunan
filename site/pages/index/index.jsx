@@ -1,15 +1,20 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
-import { Map, Marker, Popup, TileLayer, Polyline, Circle, CircleMarker } from 'react-leaflet'
+import L from 'leaflet'
+import { Map, Marker, Popup, TileLayer, Polyline, Circle, CircleMarker, LayersControl } from 'react-leaflet'
 import md_ajax from 'md_midware/md-service/md-ajax'
 import Window from 'md_components/panel'
-import {NowCircleMarker, ForecastCircleMarker} from 'md_components/circle_marker'
+import {NowCircleMarker, ForecastCircleMarker, TruthCircleMarker} from 'md_components/circle_marker'
 import {TruthPolyline, ForecastPolyline} from 'md_components/polyline'
 import 'element-theme-default'
 import '../../styles/color.css'
 import './index.css'
 import { outerHeight, outerWidth, getOffsetLeft, getOffsetTop } from '../../../utils/dom/domFns'
-import { Select, Button, Table, Checkbox, Tag, Popover} from 'antd'
+import { Select, Button, Table, Checkbox, Tag, message} from 'antd'
+import {renderPolylineAndMarker, renderCircleMarker, renderPolyline} from 'md_components/leaflet'
+
+const CIRCLE_COLOR = ['#27da22', '#131aaf', '#f7ef3d', '#e48d38', '#ef74db', '#ea2929']
+const TYPHOON_SPEED_CLASS = [17.2, 24.4, 32.6, 41.4, 50.9]
 
 const position = [15.3, 134.6]
 const DASH_POLYLINE_COLOR = {
@@ -19,6 +24,7 @@ const DASH_POLYLINE_COLOR = {
   CWB: '#4CAF50',
   PGTW: '#FFEB3B'
 }
+
 export default class Home extends React.Component {
   constructor (props) {
     super(props)
@@ -30,8 +36,9 @@ export default class Home extends React.Component {
       currentTyphoonName: null,
       dashPolylines: null,
       dashCircles: null,
-      truthRoads: {},
+      featureLayers: {},
       selectedRowKeys: [],
+      truthPathDoms: [],
       yearsList: [
         {value: '2017', label: '2017'},
         {value: '2016', label: '2016'},
@@ -48,6 +55,8 @@ export default class Home extends React.Component {
 
     this.hasSearchTyphoonData = {}
     this.currentId = null
+    this.featureLayers = {}
+    this.truthPathObjDoms = {}
   }
   componentDidMount () {
     const ownerNode = ReactDOM.findDOMNode(this)
@@ -57,28 +66,22 @@ export default class Home extends React.Component {
     const nodeOffsetTop = getOffsetTop(ownerNode)
     this.setState({rectRight: nodeOffsetLeft + nodeWidth, rectBottom: nodeOffsetTop + nodeHeight})
     this.handleYearChange(this.state.yearsList[0].value)
-  }
-  postHttpRequest (dt, url) {
-    let fd = new window.URLSearchParams()
-    fd.append('para', dt)
-    return md_ajax.post(url, fd, {
-      'headers': {
-        'content-type': 'application/x-www-form-urlencoded'
-      },
-      withCredentials: true
-    })
+    this.lysGrp = L.layerGroup()
   }
 
   handleSelectAll (selected, selectedRows, changeRows) {
-    const selectedRowKeys = selectedRows.map((ele, index) => index)
+    const selectedRowKeys = selectedRows.map((ele, index) => {
+      return ele.id
+    })
+    changeRows.map((ele, index) => {
+      this.handleSelectTyphoon(ele, selected)
+    })
     this.setState({selectedRowKeys})
   }
   handleYearChange (value) {
-    this.postHttpRequest(`{"year":${value}}`, 'http://127.0.0.1/SPTDAServer/services/sptda/getTyphoonListByYear')
+    md_ajax.get('http://127.0.0.1/list', {params: {year: value}})
     .then((data) => {
-      const rst = data.map((ele, key) => {
-        return {id: ele.bianhao, name: ele.zhongwenbianhao, key}
-      })
+      const rst = data.map((ele, index) => { ele._source.key = ele._source.id; return ele._source })
       this.setState({typhoonList: rst})
       this.handleClearAll()
     })
@@ -88,86 +91,124 @@ export default class Home extends React.Component {
       currentTyphoonName: null,
       dashPolylines: null,
       dashCircles: null,
-      selectedRowKeys: [],
-      truthRoads: {}})
+      selectedRowKeys: []
+    })
+    this.featureLayers = {}
+    this.lysGrp.clearLayers()
   }
+
+  renderPolylineAndMarkerWithAction (map, data, id) {
+    console.log('开始渲染', id)
+    let index = 0
+    const timeId = setInterval(() => {
+      if (timeId && index < data.length) {
+        if (this.featureLayers[id]) {
+          const feaLys = this.featureLayers[id]
+          const poly = feaLys.getLayers()[0]
+          const pos = [ data[index].latitude, data[index].longitude ]
+          poly.addLatLng(pos)
+          this.featureLayers[id] = feaLys.addLayer(renderCircleMarker(pos, data[index]))
+        } else {
+          const feaLys = renderPolylineAndMarker(data.slice(0, 1), 'truth')
+          this.lysGrp.addLayer(feaLys).addTo(map)
+          this.featureLayers[id] = feaLys
+        }
+        index++
+      } else {
+        clearInterval(timeId)
+      }
+    }, 100)
+  }
+  deletePolylineAndMarker (layer) {
+    this.lysGrp.removeLayer(layer)
+  }
+  // 选择台风
   handleSelectTyphoon (record, selected, selectedRows) {
     if (selected) {
-      const {id, name} = record
+      const {id, name_cn} = record
       const {selectedRowKeys} = this.state
       selectedRowKeys.push(record.key)
       if (this.hasSearchTyphoonData[id]) {
-        const {truthRoad, typhoonPointList, currentTyphoonName, originalData} = this.hasSearchTyphoonData[id]
-        const {truthRoads} = this.state
-        truthRoads[id] = truthRoad
-        this.setState({typhoonPointList, currentTyphoonName, truthRoads, selectedRowKeys})
+        const rst = this.hasSearchTyphoonData[id]
+        this.renderPolylineAndMarkerWithAction(this.map.leafletElement, rst, id)
+        this.setState({typhoonPointList: rst, currentTyphoonName: name_cn, selectedRowKeys})
       } else {
-        this.postHttpRequest(`{"bianhao":${id}}`, 'http://127.0.0.1/SPTDAServer/services/sptda/getTyphoonInfoByCode')
+        md_ajax.get('http://127.0.0.1/path', {params: {id}})
         .then((data) => {
-          const truthRoad = []
-          const rst = data.typhoonPointList.map((ele, key) => {
-            truthRoad.push([parseFloat(ele.xianzaiweidu), parseFloat(ele.xianzaijindu)])
-            return {date: ele.yubaoshijian, pressure: ele.xianzaiqiya, speed: ele.xianzaifengli, key}
+          const rst = data.map((ele, index) => {
+            ele._source.key = index
+            const dateStr = ele._source.datetime
+            const year = String.prototype.substr.call(dateStr, 0, 4)
+            const month = String.prototype.substr.call(dateStr, 4, 2)
+            const day = String.prototype.substr.call(dateStr, 6, 2)
+            const hour = String.prototype.substr.call(dateStr, 8, 2)
+            const minute = String.prototype.substr.call(dateStr, 10, 2)
+            const secend = String.prototype.substr.call(dateStr, 12, 2)
+            const date = new Date(year, month, day, hour, minute, secend)
+            ele._source.datetime = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
+            ele._source.dateObject = date
+            return ele._source
           })
-          const {truthRoads} = this.state
-          truthRoads[id] = truthRoad
           this.currentId = id
-          this.hasSearchTyphoonData[id] = {
-            truthRoad,
-            typhoonPointList: rst,
-            currentTyphoonName: name,
-            originalData: data
-          }
-
-          this.setState({typhoonPointList: rst, currentTyphoonName: name, truthRoads, selectedRowKeys})
+          this.hasSearchTyphoonData[id] = rst
+          this.setState({typhoonPointList: rst, currentTyphoonName: name_cn, selectedRowKeys})
+          this.renderPolylineAndMarkerWithAction(this.map.leafletElement, rst, id)
         })
       }
     } else {
-      const {truthRoads, selectedRowKeys} = this.state
+      const {selectedRowKeys} = this.state
       let {dashPolylines, dashCircles} = this.state
-      delete truthRoads[record.id]
       delete this.hasSearchTyphoonData[record.id]
       const filteredKeys = selectedRowKeys.filter((ele) => ele !== record.key)
-
       if (record.id === this.currentId) {
         dashPolylines = []
         dashCircles = []
       }
-      this.setState({truthRoads, typhoonPointList: [], dashPolylines, dashCircles, selectedRowKeys: filteredKeys})
+      this.deletePolylineAndMarker(this.featureLayers[record.id])
+      this.featureLayers[record.id] = null
+      this.setState({typhoonPointList: [], dashPolylines, dashCircles, selectedRowKeys: filteredKeys, currentTyphoonName: null})
     }
   }
+  // 台风点击事件
   handleTyphoonClick (record, index, event) {
-    const {id} = record
+    const {id, name_cn} = record
     this.currentId = id
     if (this.hasSearchTyphoonData[id]) {
-      const {typhoonPointList, currentTyphoonName} = this.hasSearchTyphoonData[id]
-      this.setState({typhoonPointList, currentTyphoonName})
+      const rst = this.hasSearchTyphoonData[id]
+      this.setState({typhoonPointList: rst, currentTyphoonName: name_cn})
+    } else {
+      message.warning('请先勾选此选项！')
     }
   }
   handleTyphoonPointClick (record, index, event) {
-    const id = this.currentId
-    const {originalData} = this.hasSearchTyphoonData[id]
-    const dt = originalData.typhoonPointList[index].typhoonList
-    const forecastData = {}
-    const dashCircles = []
-    dt.map((ele1, index1) => {
-      const publisher = ele1.typhoonPointList[0].fabuzhe
-      const pos = ele1.typhoonPointList.map((ele2, index2) => {
-        let center
-        if (ele2.xianzaiweidu === '9999') {
-          center = [parseFloat(ele2.yubaoweidu), parseFloat(ele2.yubaojindu)]
-          dashCircles.push(<ForecastCircleMarker info={ele2} fill fillOpacity={1} key={`${index1}-${index2}`} center={center} radius={5} />)
-        } else {
-          center = [parseFloat(ele2.xianzaiweidu), parseFloat(ele2.xianzaijindu)]
-          dashCircles.push(<NowCircleMarker info={ele2} fill fillOpacity={1} key={`${index1}-${index2}`} center={center} radius={5} />)
-        }
-        return center
-      })
-      forecastData[publisher] = {
-        positions: pos,
-        key: index1
-      }
-    })
+    const {id, key} = record
+    const data = this.hasSearchTyphoonData[id]
+    const featureLayer = this.featureLayers[id].getLayers()
+    const markers = featureLayer.slice(1)
+    const curentMarker = markers[key]
+    // const id = this.currentId
+    // const data = this.hasSearchTyphoonData[id]
+    // const dt = originalData.typhoonPointList[index].typhoonList
+    // const forecastData = {}
+    // const dashCircles = []
+    // dt.map((ele1, index1) => {
+    //   const publisher = ele1.typhoonPointList[0].fabuzhe
+    //   const pos = ele1.typhoonPointList.map((ele2, index2) => {
+    //     let center
+    //     if (ele2.xianzaiweidu === '9999') {
+    //       center = [parseFloat(ele2.yubaoweidu), parseFloat(ele2.yubaojindu)]
+    //       dashCircles.push(<ForecastCircleMarker info={ele2} fill fillOpacity={1} key={`${index1}-${index2}`} center={center} radius={5} />)
+    //     } else {
+    //       center = [parseFloat(ele2.xianzaiweidu), parseFloat(ele2.xianzaijindu)]
+    //       dashCircles.push(<NowCircleMarker info={ele2} fill fillOpacity={1} key={`${index1}-${index2}`} center={center} radius={5} />)
+    //     }
+    //     return center
+    //   })
+    //   forecastData[publisher] = {
+    //     positions: pos,
+    //     key: index1
+    //   }
+    // })
     this.renderForecastData(forecastData, dashCircles)
   }
   renderForecastData (forecastData, dashCircles) {
@@ -181,60 +222,51 @@ export default class Home extends React.Component {
     this.setState({dashPolylines, dashCircles})
     this.forceUpdate()
   }
-  renderTruthRoads () {
-    const {truthRoads} = this.state
-    const domRoads = []
-    const truthCircles = []
-    for (var key in truthRoads) {
-      const {originalData} = this.hasSearchTyphoonData[key]
-      if (truthRoads.hasOwnProperty(key)) {
-        domRoads.push(<Polyline positions={truthRoads[key]} key={key} />)
-        truthRoads[key].map((ele, index) => {
-          const dt = originalData.typhoonPointList[index]
-          truthCircles.push(<NowCircleMarker info={dt} fill fillOpacity={1} key={`${key}-${index}`} center={ele} radius={5} />)
-        })
+  renderfeatureLayers () {
+    const {featureLayers} = this.state
+    const truthPathDoms = []
+    for (let key in featureLayers) {
+      const data = this.hasSearchTyphoonData[key]
+      if (featureLayers.hasOwnProperty(key)) {
+        truthPathDoms.push(renderPolylineAndMarker(data, 'truth'))
       }
     }
-    return {domRoads, truthCircles}
+    return truthPathDoms
   }
   render () {
-    const {rectRight, rectBottom, typhoonList, typhoonPointList, currentTyphoonName, dashPolylines, dashCircles, selectedRowKeys} = this.state
-    const {domRoads, truthCircles} = this.renderTruthRoads()
+    const {rectRight, rectBottom, typhoonList, typhoonPointList, currentTyphoonName, dashPolylines, dashCircles, selectedRowKeys, truthPathDoms} = this.state
+    // const truthPathDoms = this.renderfeatureLayers()
     const columns = [{
       title: '台风编号',
       dataIndex: 'id'
     },
     {
       title: '台风名称',
-      dataIndex: 'name'
+      dataIndex: 'name_cn'
     }
     ]
-    const typhoonInfoCol = [{
-      title: '时间',
-      dataIndex: 'date'
-    },
-    {
-      title: '气压(hpa)',
-      dataIndex: 'pressure'
-    },
-    {
-      title: '风速(m/s)',
-      dataIndex: 'speed'
-    }
+    const typhoonInfoCol = [
+      {
+        title: '时间',
+        dataIndex: 'datetime'
+      },
+      {
+        title: '气压(hpa)',
+        dataIndex: 'pressure'
+      },
+      {
+        title: '风速(m/s)',
+        dataIndex: 'move_speed'
+      }
     ]
     return (
       <div style={{height: '100vh', boxSizing: 'border-box', overflow: 'hidden', paddingTop: 56}} id='md-window'>
-        <Map center={position} zoom={5} className='md-map--container'>
+        <Map center={position} zoom={5} className='md-map--container' ref={(ref) => { this.map = ref }}>
           <TileLayer
             url='http://{s}.tile.osm.org/{z}/{x}/{y}.png'
             attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
     />
-          {
-            domRoads
-            }
-          {truthCircles}
-          {dashPolylines || null}
-          {dashCircles || null}
+
         </Map>
         <Window>
           <Window.Item

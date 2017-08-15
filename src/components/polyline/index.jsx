@@ -4,11 +4,11 @@ import './style/index.scss'
 
 const TruthPolyline = (props) => {
     /** props
-     * @param position:Array
+     * @param positions:Array
      * @param color:String
      */
-  const {positions, color = '#F44336'} = props
-  return CommomPolyline(positions, color)
+  const {positions, color = '#F44336', ...other} = props
+  return <CommomPolyline positions={positions} color={color} {...other} />
 }
 const CommomPolyline = (props) => {
     /** props
@@ -23,7 +23,7 @@ const ForecastPolyline = (props) => {
      * @param position:Array
      * @param color:String
      */
-  const {positions, color = '#F44336', dashArray = [5, 5]} = props
-  return CommomPolyline(positions, color, dashArray)
+  const {positions, color = '#F44336', dashArray = [5, 5], ...other} = props
+  return <CommomPolyline positions={positions} color={color} dashArray={dashArray} {...other} />
 }
 export {TruthPolyline, ForecastPolyline}
