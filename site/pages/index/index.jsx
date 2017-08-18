@@ -1,20 +1,20 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
 import L from 'leaflet'
-import { Map, Marker, Popup, TileLayer, Polyline, Circle, CircleMarker, LayersControl } from 'react-leaflet'
+import { Map, TileLayer, Polyline, AttributionControl } from 'react-leaflet'
 import md_ajax from 'md_midware/md-service/md-ajax'
 import Window from 'md_components/panel'
-import {NowCircleMarker, ForecastCircleMarker, TruthCircleMarker} from 'md_components/circle_marker'
-import {TruthPolyline, ForecastPolyline} from 'md_components/polyline'
-import 'element-theme-default'
+// import {NowCircleMarker, ForecastCircleMarker, TruthCircleMarker} from 'md_components/circle_marker'
+// import {TruthPolyline, ForecastPolyline} from 'md_components/polyline'
+// import 'element-theme-default'
 import '../../styles/color.css'
-import './index.css'
+import './index.scss'
 import { outerHeight, outerWidth, getOffsetLeft, getOffsetTop } from '../../../utils/dom/domFns'
-import { Select, Button, Table, Checkbox, Tag, message} from 'antd'
-import {renderPolylineAndMarker, renderCircleMarker, renderPolyline} from 'md_components/leaflet'
+import { Select, Button, Table, Checkbox, Tag, message } from 'antd'
+import {renderPolylineAndMarker, renderCircleMarker, renderPolyline, drawTyphoonCirleByCanvas, stormCircleClass} from 'md_components/leaflet'
 
-const CIRCLE_COLOR = ['#27da22', '#131aaf', '#f7ef3d', '#e48d38', '#ef74db', '#ea2929']
-const TYPHOON_SPEED_CLASS = [17.2, 24.4, 32.6, 41.4, 50.9]
+// const CIRCLE_COLOR = ['#27da22', '#131aaf', '#f7ef3d', '#e48d38', '#ef74db', '#ea2929']
+// const TYPHOON_SPEED_CLASS = [17.2, 24.4, 32.6, 41.4, 50.9]
 
 const position = [15.3, 134.6]
 const DASH_POLYLINE_COLOR = {
@@ -57,6 +57,9 @@ export default class Home extends React.Component {
     this.currentId = null
     this.featureLayers = {}
     this.truthPathObjDoms = {}
+    this.timeId = {} // 存储计时器
+    this.lableMarker = {} // 路径标注（标记台风名称）
+    this.stormCircle = {} // 路径标注（标记台风名称）
   }
   componentDidMount () {
     const ownerNode = ReactDOM.findDOMNode(this)
@@ -66,6 +69,7 @@ export default class Home extends React.Component {
     const nodeOffsetTop = getOffsetTop(ownerNode)
     this.setState({rectRight: nodeOffsetLeft + nodeWidth, rectBottom: nodeOffsetTop + nodeHeight})
     this.handleYearChange(this.state.yearsList[0].value)
+    L.control.attribution({prefix: '111'})
     this.lysGrp = L.layerGroup()
   }
 
@@ -100,27 +104,58 @@ export default class Home extends React.Component {
   renderPolylineAndMarkerWithAction (map, data, id) {
     console.log('开始渲染', id)
     let index = 0
-    const timeId = setInterval(() => {
+    let timeId = setInterval(() => {
       if (timeId && index < data.length) {
         if (this.featureLayers[id]) {
           const feaLys = this.featureLayers[id]
           const poly = feaLys.getLayers()[0]
           const pos = [ data[index].latitude, data[index].longitude ]
           poly.addLatLng(pos)
-          this.featureLayers[id] = feaLys.addLayer(renderCircleMarker(pos, data[index]))
+          feaLys.addLayer(renderCircleMarker(pos, data[index]))
         } else {
           const feaLys = renderPolylineAndMarker(data.slice(0, 1), 'truth')
           this.lysGrp.addLayer(feaLys).addTo(map)
+          const labelIcon = L.divIcon({className: 'my-div-icon', html: `<div class="lable--name">${data[0].name_cn}</div>`})
+          this.lableMarker[id] = L.marker([data[0].latitude, data[0].longitude], {icon: labelIcon})
+          // canvas绘制风圈 drawTyphoonCirleByCanvas
+          const cavsDom = drawTyphoonCirleByCanvas([
+            [75, 90, 60, 75],
+            [45, 45, 25, 25],
+            [30, 35, 30, 20]
+          ])
+          // const stormIcon = L.divIcon().createIcon(cavsDom)
+          // this.stormCircle[id] = L.marker([data[0].latitude, data[0].longitude], {icon: stormIcon})
+          // this.lysGrp.addLayer(this.stormCircle[id])
+          this.stormCircle[id] = stormCircleClass([data[0].latitude, data[0].longitude], [
+            [75, 90, 60, 75],
+            [45, 45, 25, 25],
+            [30, 35, 30, 20]
+          ], {clickable: true,
+            color: '#FD8B00',
+            fill: true,
+            fillColor: '#FD8B00',
+            fillOpacity: 0.3,
+            opacity: 1,
+            weight: 1})
+          this.lysGrp.addLayer(this.stormCircle[id])
+          this.lysGrp.addLayer(this.lableMarker[id])
           this.featureLayers[id] = feaLys
         }
         index++
       } else {
         clearInterval(timeId)
+        console.log('已清除计时器，ID：' + timeId)
+        index = null
+        timeId = null
       }
     }, 100)
+    this.timeId[id] = timeId
   }
-  deletePolylineAndMarker (layer) {
-    this.lysGrp.removeLayer(layer)
+  deletePolylineAndMarkerById (id) {
+    const feaLys = this.featureLayers[id]
+    const lableMarker = this.lableMarker[id]
+    this.lysGrp.removeLayer(feaLys)
+    this.lysGrp.removeLayer(lableMarker)
   }
   // 选择台风
   handleSelectTyphoon (record, selected, selectedRows) {
@@ -135,7 +170,7 @@ export default class Home extends React.Component {
       } else {
         md_ajax.get('http://127.0.0.1/path', {params: {id}})
         .then((data) => {
-          const rst = data.map((ele, index) => {
+          const rst = data.reverse().map((ele, index) => {
             ele._source.key = index
             const dateStr = ele._source.datetime
             const year = String.prototype.substr.call(dateStr, 0, 4)
@@ -145,7 +180,8 @@ export default class Home extends React.Component {
             const minute = String.prototype.substr.call(dateStr, 10, 2)
             const secend = String.prototype.substr.call(dateStr, 12, 2)
             const date = new Date(year, month, day, hour, minute, secend)
-            ele._source.datetime = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
+            ele._source.datetimeLong = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
+            ele._source.datetime = `${month}月${day}日${hour}时`
             ele._source.dateObject = date
             return ele._source
           })
@@ -164,7 +200,8 @@ export default class Home extends React.Component {
         dashPolylines = []
         dashCircles = []
       }
-      this.deletePolylineAndMarker(this.featureLayers[record.id])
+      clearInterval(this.timeId[record.id])
+      this.deletePolylineAndMarkerById(record.id)
       this.featureLayers[record.id] = null
       this.setState({typhoonPointList: [], dashPolylines, dashCircles, selectedRowKeys: filteredKeys, currentTyphoonName: null})
     }
@@ -186,30 +223,9 @@ export default class Home extends React.Component {
     const featureLayer = this.featureLayers[id].getLayers()
     const markers = featureLayer.slice(1)
     const curentMarker = markers[key]
-    // const id = this.currentId
-    // const data = this.hasSearchTyphoonData[id]
-    // const dt = originalData.typhoonPointList[index].typhoonList
-    // const forecastData = {}
-    // const dashCircles = []
-    // dt.map((ele1, index1) => {
-    //   const publisher = ele1.typhoonPointList[0].fabuzhe
-    //   const pos = ele1.typhoonPointList.map((ele2, index2) => {
-    //     let center
-    //     if (ele2.xianzaiweidu === '9999') {
-    //       center = [parseFloat(ele2.yubaoweidu), parseFloat(ele2.yubaojindu)]
-    //       dashCircles.push(<ForecastCircleMarker info={ele2} fill fillOpacity={1} key={`${index1}-${index2}`} center={center} radius={5} />)
-    //     } else {
-    //       center = [parseFloat(ele2.xianzaiweidu), parseFloat(ele2.xianzaijindu)]
-    //       dashCircles.push(<NowCircleMarker info={ele2} fill fillOpacity={1} key={`${index1}-${index2}`} center={center} radius={5} />)
-    //     }
-    //     return center
-    //   })
-    //   forecastData[publisher] = {
-    //     positions: pos,
-    //     key: index1
-    //   }
-    // })
-    this.renderForecastData(forecastData, dashCircles)
+    curentMarker.openPopup()
+
+    // this.renderForecastData(forecastData, dashCircles)
   }
   renderForecastData (forecastData, dashCircles) {
     const dashPolylines = []
@@ -234,8 +250,7 @@ export default class Home extends React.Component {
     return truthPathDoms
   }
   render () {
-    const {rectRight, rectBottom, typhoonList, typhoonPointList, currentTyphoonName, dashPolylines, dashCircles, selectedRowKeys, truthPathDoms} = this.state
-    // const truthPathDoms = this.renderfeatureLayers()
+    const {rectRight, rectBottom, typhoonList, typhoonPointList, currentTyphoonName, selectedRowKeys} = this.state
     const columns = [{
       title: '台风编号',
       dataIndex: 'id'
@@ -261,12 +276,12 @@ export default class Home extends React.Component {
     ]
     return (
       <div style={{height: '100vh', boxSizing: 'border-box', overflow: 'hidden', paddingTop: 56}} id='md-window'>
-        <Map center={position} zoom={5} className='md-map--container' ref={(ref) => { this.map = ref }}>
+        <Map center={position} zoom={5} className='md-map--container' ref={(ref) => { this.map = ref }} attributionControl={false}>
           <TileLayer
             url='http://{s}.tile.osm.org/{z}/{x}/{y}.png'
-            attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+            attribution='OpenStreetMap'
     />
-
+          <AttributionControl prefix={'<a target="_blank" href="http://metedesign.xyz/">SuperMap MeteDesign</a>'} position='bottomleft' />
         </Map>
         <Window>
           <Window.Item
@@ -302,10 +317,8 @@ export default class Home extends React.Component {
               </div>
               <div style={{marginTop: 5}}>
                 <Button type='primary' size='small' style={{marginLeft: 20, marginRight: 20}} onClick={() => { this.handleClearAll() }}>清空</Button>
-                <Checkbox>刷新</Checkbox>
-                <Checkbox>报文</Checkbox>
               </div>
-              <div>
+              <div style={{marginTop: 5}}>
                 {currentTyphoonName ? <Tag color='blue'>{currentTyphoonName}</Tag> : null}
                 <Table bordered columns={typhoonInfoCol} dataSource={typhoonPointList} size='small' pagination={{defaultPageSize: 5}}
                   onRowClick={this.handleTyphoonPointClick}
@@ -349,24 +362,6 @@ export default class Home extends React.Component {
               <Checkbox>风圈半径</Checkbox>
             </div>
           </Window.Item>
-          <Window.Item
-            bounds='#aa'
-            title='距离检测'
-            className='md-drag--container'
-            defaultPosition={{x: rectRight - 430, y: rectBottom - 300}}
-            mini
-            disable
-            width={200}
-          />
-          <Window.Item
-            bounds='#aa'
-            title='移向移速监测'
-            className='md-drag--container'
-            defaultPosition={{x: rectRight - 640, y: rectBottom - 300}}
-            mini
-            disable
-            width={200}
-          />
         </Window>
       </div>
 

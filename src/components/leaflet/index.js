@@ -1,6 +1,8 @@
 import L from 'leaflet'
 import {renderPolyline} from './polyline.js'
 import {renderCircleMarker} from './marker.js'
+import drawTyphoonCirleByCanvas from './stormCircle.js'
+import stormCircleClass from './stormCircleClass.js'
 
 const renderPolylineAndMarker = (data, type) => {
   const positions = []
@@ -14,4 +16,4 @@ const renderPolylineAndMarker = (data, type) => {
   return L.featureGroup([polyline, ...markers])
 }
 
-export {renderPolylineAndMarker, renderCircleMarker, renderPolyline}
+export {renderPolylineAndMarker, renderCircleMarker, renderPolyline, drawTyphoonCirleByCanvas, stormCircleClass}

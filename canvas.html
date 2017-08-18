@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+</head>
+
+<body>
+</body>
+
+</html>
+<script>
+    function drawTyphoonCirleByCanvas(data, color) {
+        const max = findMax(data)
+        const canvas = document.createElement('canvas')
+        canvas.width = 2 * max
+        canvas.height = 2 * max
+        const context = canvas.getContext('2d')
+
+        function findMax(data) {
+            const temp = []
+            for (let i = 0; i < data.length; i++) {
+                let element = data[i];
+                for (let j = 0; j < element.length; j++) {
+                    let _element = element[j];
+                    temp.push(_element)
+                }
+            }
+            return temp.sort((a, b) => b - a)[0]
+        }
+
+        function drawTyphoonCirle(data, color) {
+            context.beginPath()
+            if (data.length > 1) {
+                for (var i = 1; i < data.length; i++) {
+                    var element = data[i];
+                    var index = i - 1
+                    context.arc(max, max, element, 0.5 * index * Math.PI, (0.5 * index + 0.5) * Math.PI, false)
+                }
+            }
+            context.arc(max, max, data[0], 1.5 * Math.PI, 2 * Math.PI, false)
+            context.fillStyle = color
+            context.lineWidth = 2
+            context.strokeStyle = '#00C853'
+            context.closePath()
+            context.fill()
+            context.stroke()
+        }
+        for (let j = 0; j < data.length; j++) {
+            let element = data[j];
+            drawTyphoonCirle(element, `rgba(0, ${230-j*30}, 118,0.5)`)
+        }
+        return canvas
+    }
+    const cavs = drawTyphoonCirleByCanvas([
+        [75, 90, 60, 75],
+        [45, 45, 25, 25],
+        [30, 35, 30, 20]
+    ])
+    document.body.appendChild(cavs)
+    // drawTyphoonCirle([75, 90, 60, 75], `rgba(0, 230, 118,0.5)`)
+    // drawTyphoonCirle([45, 45, 25, 25], `rgba(0, 180, 118,0.5)`)
+    // drawTyphoonCirle([30, 35, 30, 20], `rgba(0, 130, 118,0.5)`)
+</script>
