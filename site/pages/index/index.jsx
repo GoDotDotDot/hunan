@@ -139,25 +139,6 @@ export default class Home extends React.Component {
           return ele._source
         })
         this.timeLineQueue.push(this.timeLineClosure(rst, id))
-        /* md_ajax.get('http://127.0.0.1/path', {params: {id}})
-        .then((data) => {
-          const rst = data.reverse().map((ele, index) => {
-            ele._source.key = index
-            const dateStr = ele._source.datetime
-            const year = String.prototype.substr.call(dateStr, 0, 4)
-            const month = String.prototype.substr.call(dateStr, 4, 2)
-            const day = String.prototype.substr.call(dateStr, 6, 2)
-            const hour = String.prototype.substr.call(dateStr, 8, 2)
-            const minute = String.prototype.substr.call(dateStr, 10, 2)
-            const secend = String.prototype.substr.call(dateStr, 12, 2)
-            const date = new Date(year, month, day, hour, minute, secend)
-            ele._source.datetimeLong = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
-            ele._source.datetime = `${month}月${day}日${hour}时`
-            ele._source.dateObject = date
-            return ele._source
-          })
-          this.timeLineQueue.push(this.timeLineClosure(rst, id))
-        }) */
         return true
       }
     }
@@ -445,7 +426,7 @@ export default class Home extends React.Component {
     }
     const forecastFeaLys = this.renderForecastData(data)
     this.forecastLayers[id].all = forecastFeaLys
-    forecastFeaLys ? this.lysGrp.addLayer(forecastFeaLys) : null
+    forecastFeaLys && this.lysGrp.addLayer(forecastFeaLys)
   }
   /**
    * 渲染预报数据

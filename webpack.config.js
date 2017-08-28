@@ -173,9 +173,14 @@ module.exports = function (env) {
             loader: 'babel-loader',
             options: {
               presets: [['es2015', { 'modules': false }], 'react', 'stage-0'],
-              cacheDirectory: true
+              cacheDirectory: true,
               // Since babel-plugin-transform-runtime includes a polyfill that includes a custom regenerator runtime and core.js, the following usual shimming method using webpack.ProvidePlugin will not work:
-
+              plugins: [
+                ['import', {
+                  libraryName: 'antd',
+                  style: 'css'
+                }]
+              ]
             }
           }
         },
