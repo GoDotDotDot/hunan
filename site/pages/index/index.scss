@@ -308,3 +308,34 @@ $prefix:'md-circleMarker';
 .add-content{
     display: grid;
 }
+
+.timeline-container{
+    position: absolute;
+    bottom: 21px;
+    height: 106px;
+    width: 968px;
+    z-index: 9999999;
+    background: #fff;
+    // overflow: auto;
+    left: 50%;
+    margin-left: -484px;
+    .timeline-content,.timeline-controll{
+    }
+    .timeline-controll{
+        position: absolute;
+        width: 100px;
+        top: 0;
+        left: 0;
+        height: 100%;
+        background-color: #108ee9;
+        border-top-left-radius: 5px;
+        border-bottom-left-radius: 5px;
+        padding: 5px;
+    }
+    .timeline-content{
+        width: 864px;
+        height: 106px;
+        overflow: auto;
+        margin-left: 105px;
+    }
+}

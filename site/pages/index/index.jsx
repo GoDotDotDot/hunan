@@ -1,30 +1,35 @@
 import React from 'react'
 import ReactDOM from 'react-dom'
 import L from 'leaflet'
-import { Map, TileLayer, Polyline, AttributionControl } from 'react-leaflet'
+import { Map, AttributionControl } from 'react-leaflet'
 import md_ajax from 'md_midware/md-service/md-ajax'
 import Window from 'md_components/panel'
-// import {NowCircleMarker, ForecastCircleMarker, TruthCircleMarker} from 'md_components/circle_marker'
-// import {TruthPolyline, ForecastPolyline} from 'md_components/polyline'
-// import 'element-theme-default'
-import '../../styles/color.css'
-import './index.scss'
 import { outerHeight, outerWidth, getOffsetLeft, getOffsetTop } from '../../../utils/dom/domFns'
 import { Select, Button, Table, Checkbox, Tag, message } from 'antd'
-import {renderPolylineAndMarker, renderCircleMarker, renderPolyline, drawTyphoonCirleByCanvas, stormCircleClass} from 'md_components/leaflet'
-
-// const CIRCLE_COLOR = ['#27da22', '#131aaf', '#f7ef3d', '#e48d38', '#ef74db', '#ea2929']
-// const TYPHOON_SPEED_CLASS = [17.2, 24.4, 32.6, 41.4, 50.9]
-
+import {renderPolylineAndMarker, renderCircleMarker, renderForecastPolylineAndMarker, canvasOverlay, wmts} from 'md_components/leaflet'
+import parseDateString from '../../../utils/date.js'
+import vis from 'vis'
+import '../../styles/color.css'
+import './index.scss'
 const position = [15.3, 134.6]
-const DASH_POLYLINE_COLOR = {
-  VHHH: '#F44336', // 香港
-  RJTD: '#673AB7',
-  BABJ: '#03A9F4',
-  CWB: '#4CAF50',
-  PGTW: '#FFEB3B'
+let lastTime
+/**
+ * 格式化风圈数据
+ * @param {String} data 风圈数据
+ * @return {Array} 数组
+ */
+const formatCircleData = (data) => {
+  const radius = [7, 10, 12]
+  const temp = []
+  for (let i = 0; i < radius.length; i++) {
+    var ele = 'radius' + radius[i]
+    if (data[ele]) {
+      let strArr = data[ele].split(',')
+      temp.push(strArr.map(val => parseFloat(val)))
+    }
+  }
+  return temp
 }
-
 export default class Home extends React.Component {
   constructor (props) {
     super(props)
@@ -34,11 +39,7 @@ export default class Home extends React.Component {
       typhoonList: [],
       typhoonPointList: [],
       currentTyphoonName: null,
-      dashPolylines: null,
-      dashCircles: null,
-      featureLayers: {},
       selectedRowKeys: [],
-      truthPathDoms: [],
       yearsList: [
         {value: '2017', label: '2017'},
         {value: '2016', label: '2016'},
@@ -52,14 +53,16 @@ export default class Home extends React.Component {
     this.handleTyphoonPointClick = this.handleTyphoonPointClick.bind(this)
     this.handleTyphoonClick = this.handleTyphoonClick.bind(this)
     this.handleSelectAll = this.handleSelectAll.bind(this)
+    this.handleTimeLineClick = this.handleTimeLineClick.bind(this)
 
-    this.hasSearchTyphoonData = {}
-    this.currentId = null
-    this.featureLayers = {}
-    this.truthPathObjDoms = {}
+    this.hasSearchTyphoonData = {} // 保存已查询的数据
+    this.currentId = null // 当前选择的台风编号
+    this.featureLayers = {}  // 真实台风路径
+    this.forecastLayers = {}  // 预报台风路径
     this.timeId = {} // 存储计时器
     this.lableMarker = {} // 路径标注（标记台风名称）
-    this.stormCircle = {} // 路径标注（标记台风名称）
+    this.stormCircle = {} // 台风风圈
+    this.timeLineQueue = [] // 时间轴队列
   }
   componentDidMount () {
     const ownerNode = ReactDOM.findDOMNode(this)
@@ -69,10 +72,30 @@ export default class Home extends React.Component {
     const nodeOffsetTop = getOffsetTop(ownerNode)
     this.setState({rectRight: nodeOffsetLeft + nodeWidth, rectBottom: nodeOffsetTop + nodeHeight})
     this.handleYearChange(this.state.yearsList[0].value)
-    L.control.attribution({prefix: '111'})
     this.lysGrp = L.layerGroup()
-  }
+    // http://t0.tianditu.com/cia_c/wmts?SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetCapabilities
+    // const url = 'http://t0.tianditu.cn/img_c/wmts'
+    // const wmtsLyr = wmts(url, {
+    //   layer: 'img',
+    //   format: 'tiles',
+    //   tilematrixSet: 'c',
+    //   style: 'default'})
+    // this.map.leafletElement.addLayer(wmtsLyr)
+    L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(this.map.leafletElement)
+    // timeline start
+    const container = document.getElementById('timeline')
 
+    // create a Timeline
+    window.timeline = new vis.Timeline(container)
+  }
+/**
+ * 全选事件处理函数
+ * @param {Boolean} selected 是否选中
+ * @param {Array} selectedRows 已选择的行
+ * @param {Array} changeRows 改变的行
+ */
   handleSelectAll (selected, selectedRows, changeRows) {
     const selectedRowKeys = selectedRows.map((ele, index) => {
       return ele.id
@@ -82,14 +105,183 @@ export default class Home extends React.Component {
     })
     this.setState({selectedRowKeys})
   }
+  /**
+   * 时间轴当前时间和台风数据时间对比
+   * @param {Number} time 时间戳
+   */
+  async compareTyphoonWithTime (time) {
+    // 台风数据（年）
+    const {typhoonList} = this.state
+    // 浅拷贝台风数据并反转
+    const compData = typhoonList.slice().reverse()
+    for (let i = 0; i < compData.length; i++) {
+      let ele = compData[i]
+      // 时间戳对比
+      const bTime = parseDateString(ele.begin_time).getTime()
+      if (bTime === time) {
+        const {id} = ele
+        // 闭包放入队列
+        // ajax请求台风path数据
+        const dt = await md_ajax.get('http://127.0.0.1/path', {params: {id}})
+        const rst = dt.reverse().map((ele, index) => {
+          ele._source.key = index
+          const dateStr = ele._source.datetime
+          const year = String.prototype.substr.call(dateStr, 0, 4)
+          const month = String.prototype.substr.call(dateStr, 4, 2)
+          const day = String.prototype.substr.call(dateStr, 6, 2)
+          const hour = String.prototype.substr.call(dateStr, 8, 2)
+          const minute = String.prototype.substr.call(dateStr, 10, 2)
+          const secend = String.prototype.substr.call(dateStr, 12, 2)
+          const date = new Date(year, month, day, hour, minute, secend)
+          ele._source.datetimeLong = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
+          ele._source.datetime = `${month}月${day}日${hour}时`
+          ele._source.dateObject = date
+          return ele._source
+        })
+        this.timeLineQueue.push(this.timeLineClosure(rst, id))
+        /* md_ajax.get('http://127.0.0.1/path', {params: {id}})
+        .then((data) => {
+          const rst = data.reverse().map((ele, index) => {
+            ele._source.key = index
+            const dateStr = ele._source.datetime
+            const year = String.prototype.substr.call(dateStr, 0, 4)
+            const month = String.prototype.substr.call(dateStr, 4, 2)
+            const day = String.prototype.substr.call(dateStr, 6, 2)
+            const hour = String.prototype.substr.call(dateStr, 8, 2)
+            const minute = String.prototype.substr.call(dateStr, 10, 2)
+            const secend = String.prototype.substr.call(dateStr, 12, 2)
+            const date = new Date(year, month, day, hour, minute, secend)
+            ele._source.datetimeLong = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
+            ele._source.datetime = `${month}月${day}日${hour}时`
+            ele._source.dateObject = date
+            return ele._source
+          })
+          this.timeLineQueue.push(this.timeLineClosure(rst, id))
+        }) */
+        return true
+      }
+    }
+  }
+  /**
+   * 时间轴闭包，用于存储渲染
+   * @param {Array} data 台风数据
+   * @param {String} id 台风编号
+   */
+  timeLineClosure (data, id) {
+    let index = 0
+    const _this = this
+    return function () {
+      if (index < data.length) {
+        if (_this.featureLayers[id]) {
+          // _this.reRenderForecastData(data[index], id)
+          const feaLys = _this.featureLayers[id]
+          const poly = feaLys.getLayers()[0]
+          const pos = [ data[index].latitude, data[index].longitude ]
+          poly.addLatLng(pos)
+          feaLys.addLayer(renderCircleMarker(pos, data[index]))
+          _this.stormCircle[id].setData(pos, formatCircleData(data[index]))
+        } else {
+          const firstData = data.slice(0, 1)
+          const feaLys = renderPolylineAndMarker(firstData)
+          const labelIcon = L.divIcon({className: 'my-div-icon', html: `<div class="lable--name">${data[0].name_cn}</div>`})
+          // _this.reRenderForecastData(data[index], id)
+          _this.lysGrp.addLayer(feaLys).addTo(_this.map.leafletElement)
+          _this.lableMarker[id] = L.marker([data[0].latitude, data[0].longitude], {icon: labelIcon})
+          _this.stormCircle[id] = canvasOverlay([data[0].latitude, data[0].longitude], formatCircleData(data[0]))
+          _this.lysGrp.addLayer(_this.stormCircle[id])
+          _this.lysGrp.addLayer(_this.lableMarker[id])
+          _this.featureLayers[id] = feaLys
+        }
+        index++
+        return true
+      } else {
+        // 绘制完毕，清除闭包内存
+        index = null
+        data = null
+        id = null
+        return false // 表示该闭包生命周期结束，用于清除队列
+      }
+    }
+  }
+  runTimeLineClosure () {
+    const queue = this.timeLineQueue
+    console.log(queue)
+    for (let i = 0; i < queue.length; i++) {
+      const ele = queue[i]
+      const rst = ele()
+      rst || queue.splice(i, 1)
+    }
+  }
+  /**
+   * 时间轴面板开始按钮事件处理器
+   * @param {Event} e 事件对象
+   */
+  handleTimeLineClick (e) {
+    setInterval(async() => {
+      const currentTime = lastTime
+      window.timeline.moveTo(currentTime)
+      window.timeline.setCurrentTime(currentTime)
+      await this.compareTyphoonWithTime(currentTime)
+      lastTime = currentTime + 2 * 3600 * 1000  // 台风数据2小时一次
+      this.runTimeLineClosure()
+    }, 500)
+  }
+  /**
+   * 设置时间线数据
+   * @param {Array} data 年台风数据
+   */
+  setTimeLineData (data) {
+    const items = new vis.DataSet()
+    for (let i = 0; i < data.length; i++) {
+      let element = data[i]
+      items.add({
+        id: i,
+        content: `${element.name_cn}`,
+        start: parseDateString(element.begin_time),
+        end: parseDateString(element.end_time)
+      })
+    }
+    var options = {
+      start: items._getItem(0).start,
+      // end: new Date(new Date().getTime() + 1000 * 100),
+      // locale:,
+      rollingMode: {
+        follow: true,
+        offset: 0.5
+      },
+      verticalScroll: true
+      // timeAxis: {
+      //   scale: 'hour',
+      //   step: 1
+      // }
+    }
+    const fisrtTime = items._getItem(0).start.getTime()
+    lastTime = fisrtTime
+    window.timeline.setCurrentTime(fisrtTime)
+    // window.timeline.setOptions(options)
+    window.timeline.setItems(items)
+    // window.timeline.fit()
+  }
+  /**
+   * 台风年限事件处理函数
+   * @param {string} value 年
+   */
   handleYearChange (value) {
     md_ajax.get('http://127.0.0.1/list', {params: {year: value}})
     .then((data) => {
       const rst = data.map((ele, index) => { ele._source.key = ele._source.id; return ele._source })
-      this.setState({typhoonList: rst})
       this.handleClearAll()
+      this.setState({typhoonList: rst}, () => {
+        // 时间轴业务 开始
+        const typhoonYearData = JSON.parse(JSON.stringify(rst)).reverse()
+        this.setTimeLineData(typhoonYearData)
+        // 时间轴业务 结束
+      })
     })
   }
+  /**
+   * 清空功能事件处理函数
+   */
   handleClearAll () {
     this.setState({typhoonPointList: [],
       currentTyphoonName: null,
@@ -100,43 +292,34 @@ export default class Home extends React.Component {
     this.featureLayers = {}
     this.lysGrp.clearLayers()
   }
-
+  /**
+   * 动画绘制台风路径
+   * @param {Map} map Leaflet Map对象
+   * @param {*} data 台风数据
+   * @param {*} id 台风编号
+   */
   renderPolylineAndMarkerWithAction (map, data, id) {
     console.log('开始渲染', id)
     let index = 0
+    this.forecastLayers[id] = {}
     let timeId = setInterval(() => {
       if (timeId && index < data.length) {
         if (this.featureLayers[id]) {
+          this.reRenderForecastData(data[index], id)
           const feaLys = this.featureLayers[id]
           const poly = feaLys.getLayers()[0]
           const pos = [ data[index].latitude, data[index].longitude ]
           poly.addLatLng(pos)
           feaLys.addLayer(renderCircleMarker(pos, data[index]))
+          this.stormCircle[id].setData(pos, formatCircleData(data[index]))
         } else {
-          const feaLys = renderPolylineAndMarker(data.slice(0, 1), 'truth')
-          this.lysGrp.addLayer(feaLys).addTo(map)
+          const firstData = data.slice(0, 1)
+          const feaLys = renderPolylineAndMarker(firstData)
           const labelIcon = L.divIcon({className: 'my-div-icon', html: `<div class="lable--name">${data[0].name_cn}</div>`})
+          this.reRenderForecastData(data[index], id)
+          this.lysGrp.addLayer(feaLys).addTo(map)
           this.lableMarker[id] = L.marker([data[0].latitude, data[0].longitude], {icon: labelIcon})
-          // canvas绘制风圈 drawTyphoonCirleByCanvas
-          const cavsDom = drawTyphoonCirleByCanvas([
-            [75, 90, 60, 75],
-            [45, 45, 25, 25],
-            [30, 35, 30, 20]
-          ])
-          // const stormIcon = L.divIcon().createIcon(cavsDom)
-          // this.stormCircle[id] = L.marker([data[0].latitude, data[0].longitude], {icon: stormIcon})
-          // this.lysGrp.addLayer(this.stormCircle[id])
-          this.stormCircle[id] = stormCircleClass([data[0].latitude, data[0].longitude], [
-            [75, 90, 60, 75],
-            [45, 45, 25, 25],
-            [30, 35, 30, 20]
-          ], {clickable: true,
-            color: '#FD8B00',
-            fill: true,
-            fillColor: '#FD8B00',
-            fillOpacity: 0.3,
-            opacity: 1,
-            weight: 1})
+          this.stormCircle[id] = canvasOverlay([data[0].latitude, data[0].longitude], formatCircleData(data[0]))
           this.lysGrp.addLayer(this.stormCircle[id])
           this.lysGrp.addLayer(this.lableMarker[id])
           this.featureLayers[id] = feaLys
@@ -151,13 +334,26 @@ export default class Home extends React.Component {
     }, 100)
     this.timeId[id] = timeId
   }
+  /**
+   * 删除台风路径
+   * @param {string} id 台风编号
+   */
   deletePolylineAndMarkerById (id) {
     const feaLys = this.featureLayers[id]
     const lableMarker = this.lableMarker[id]
+    const stormCircle = this.stormCircle[id]
+    const forecastLys = this.forecastLayers[id].all
+    forecastLys && this.lysGrp.removeLayer(forecastLys)
     this.lysGrp.removeLayer(feaLys)
+    this.lysGrp.removeLayer(stormCircle)
     this.lysGrp.removeLayer(lableMarker)
   }
-  // 选择台风
+  /**
+   * 选择台风事件处理函数
+   * @param {Object} record 选择行的数据
+   * @param {boolean} selected 是否选中
+   * @param {array} selectedRows 已选择的行
+   */
   handleSelectTyphoon (record, selected, selectedRows) {
     if (selected) {
       const {id, name_cn} = record
@@ -193,20 +389,23 @@ export default class Home extends React.Component {
       }
     } else {
       const {selectedRowKeys} = this.state
-      let {dashPolylines, dashCircles} = this.state
       delete this.hasSearchTyphoonData[record.id]
       const filteredKeys = selectedRowKeys.filter((ele) => ele !== record.key)
       if (record.id === this.currentId) {
-        dashPolylines = []
-        dashCircles = []
+
       }
       clearInterval(this.timeId[record.id])
       this.deletePolylineAndMarkerById(record.id)
       this.featureLayers[record.id] = null
-      this.setState({typhoonPointList: [], dashPolylines, dashCircles, selectedRowKeys: filteredKeys, currentTyphoonName: null})
+      this.setState({typhoonPointList: [], selectedRowKeys: filteredKeys, currentTyphoonName: null})
     }
   }
-  // 台风点击事件
+  /**
+   * 台风选择事件处理函数
+   * @param {Object} record 选择行的数据
+   * @param {Number} index 选择的索引
+   * @param {Event} event 事件对象
+   */
   handleTyphoonClick (record, index, event) {
     const {id, name_cn} = record
     this.currentId = id
@@ -217,48 +416,66 @@ export default class Home extends React.Component {
       message.warning('请先勾选此选项！')
     }
   }
+   /**
+   * 台风时间节点选择事件处理函数
+   * @param {Object} record 选择行的数据
+   * @param {Number} index 选择的索引
+   * @param {Event} event 事件对象
+   */
   handleTyphoonPointClick (record, index, event) {
     const {id, key} = record
-    const data = this.hasSearchTyphoonData[id]
+    const data = this.hasSearchTyphoonData[id][key]
     const featureLayer = this.featureLayers[id].getLayers()
+    const stormCircle = this.stormCircle[id]
+    stormCircle.setData([data.latitude, data.longitude], formatCircleData(data))
     const markers = featureLayer.slice(1)
     const curentMarker = markers[key]
     curentMarker.openPopup()
-
-    // this.renderForecastData(forecastData, dashCircles)
+    // 渲染预报路径数据
+    this.reRenderForecastData(data, id)
   }
-  renderForecastData (forecastData, dashCircles) {
-    const dashPolylines = []
-    for (var key in forecastData) {
-      if (forecastData.hasOwnProperty(key)) {
-        var element = forecastData[key]
-        dashPolylines.push(<Polyline color={DASH_POLYLINE_COLOR[key]} positions={element.positions} key={`dash-${element.key}`} dashArray={[5, 5]} />)
-      }
+  /**
+   * 重新渲染台风预报数据
+   * @param {*} data 预报数据
+   * @param {*} id 台风编号
+   */
+  reRenderForecastData (data, id) {
+    if (this.lysGrp.hasLayer(this.forecastLayers[id].all)) {
+      this.lysGrp.removeLayer(this.forecastLayers[id].all)
     }
-    this.setState({dashPolylines, dashCircles})
-    this.forceUpdate()
+    const forecastFeaLys = this.renderForecastData(data)
+    this.forecastLayers[id].all = forecastFeaLys
+    forecastFeaLys ? this.lysGrp.addLayer(forecastFeaLys) : null
   }
-  renderfeatureLayers () {
-    const {featureLayers} = this.state
-    const truthPathDoms = []
-    for (let key in featureLayers) {
-      const data = this.hasSearchTyphoonData[key]
-      if (featureLayers.hasOwnProperty(key)) {
-        truthPathDoms.push(renderPolylineAndMarker(data, 'truth'))
-      }
+  /**
+   * 渲染预报数据
+   * @param {*} data 预报数据
+   */
+  renderForecastData (data) {
+    if (data.forecast) {
+      const {id} = data
+      const forecastData = data.forecast
+      this.forecastLayers[id] = {}
+      const feaLys = forecastData.map((ele, index) => {
+        const {latitude, longitude} = data
+        ele.points.unshift({latitude, longitude})
+        this.forecastLayers[id][ele.sets] = renderForecastPolylineAndMarker(ele.points, ele.sets, data.name_cn)
+        return this.forecastLayers[id][ele.sets]
+      })
+      return L.featureGroup(feaLys)
     }
-    return truthPathDoms
   }
   render () {
     const {rectRight, rectBottom, typhoonList, typhoonPointList, currentTyphoonName, selectedRowKeys} = this.state
-    const columns = [{
-      title: '台风编号',
-      dataIndex: 'id'
-    },
-    {
-      title: '台风名称',
-      dataIndex: 'name_cn'
-    }
+    const columns = [
+      {
+        title: '台风编号',
+        dataIndex: 'id'
+      },
+      {
+        title: '台风名称',
+        dataIndex: 'name_cn'
+      }
     ]
     const typhoonInfoCol = [
       {
@@ -277,12 +494,14 @@ export default class Home extends React.Component {
     return (
       <div style={{height: '100vh', boxSizing: 'border-box', overflow: 'hidden', paddingTop: 56}} id='md-window'>
         <Map center={position} zoom={5} className='md-map--container' ref={(ref) => { this.map = ref }} attributionControl={false}>
-          <TileLayer
-            url='http://{s}.tile.osm.org/{z}/{x}/{y}.png'
-            attribution='OpenStreetMap'
-    />
           <AttributionControl prefix={'<a target="_blank" href="http://metedesign.xyz/">SuperMap MeteDesign</a>'} position='bottomleft' />
         </Map>
+        <div className='timeline-container'>
+          <div className='timeline-controll'>
+            <Button onClick={this.handleTimeLineClick}>开始</Button>
+          </div>
+          <div className='timeline-content' id='timeline' />
+        </div>
         <Window>
           <Window.Item
             bounds='#aa'
