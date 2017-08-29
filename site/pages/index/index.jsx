@@ -233,8 +233,8 @@ export default class Home extends React.Component {
     window.timeline.moveTo(currentTime, {animation: false})
     window.timeline.setCurrentTime(currentTime)
     this.compareTyphoonWithTime(currentTime)
-    lastTime = currentTime + 2 * 3600 * 1000  // 台风数据2小时一次
     this.runTimeLineClosure()
+    lastTime = currentTime + 2 * 3600 * 1000  // 台风数据2小时一次
     const timeLineCurrentTime = dateFormat(currentTime, 'yyyy年MM月dd日hh时')
     this.setState({timeLineCurrentTime})
   }
@@ -285,7 +285,7 @@ export default class Home extends React.Component {
    * @param {string} type 速度类型，值为backward（快退）或者forward（快进），默认forward
    */
   handleSpeedAjust (type) {
-    if (this.timelineIntervalID) {
+    if (this.timelineIntervalID && !this.state.timeLineStar) {
       let {timeLineSpeedLable} = this.state
       if (type === 'backward') {
         this.timeLineSpeed = this.timeLineSpeed * 2
