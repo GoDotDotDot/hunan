@@ -215,7 +215,8 @@ export default class Home extends React.Component {
       clearInterval(this.timelineIntervalID)
       const {typhoonList} = this.state
       const typhoonYearData = JSON.parse(JSON.stringify(typhoonList)).reverse()
-      const currentTime = parseDateString(typhoonYearData[0].begin_time)
+      const currentTime = parseDateString(typhoonYearData[0].begin_time).getTime()
+      lastTime = currentTime
       window.timeline.moveTo(currentTime, {animation: false})
       window.timeline.setCurrentTime(currentTime)
       this.handleClearAll()
