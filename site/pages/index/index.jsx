@@ -5,13 +5,18 @@ import { Map, AttributionControl } from 'react-leaflet'
 import md_ajax from 'md_midware/md-service/md-ajax'
 import Window from 'md_components/panel'
 import { outerHeight, outerWidth, getOffsetLeft, getOffsetTop } from '../../../utils/dom/domFns'
-import { Select, Button, Table, Checkbox, Tag, message } from 'antd'
+import { Select, Button, Table, Checkbox, Tag, message, Icon } from 'antd'
 import {renderPolylineAndMarker, renderCircleMarker, renderForecastPolylineAndMarker, canvasOverlay, wmts} from 'md_components/leaflet'
-import parseDateString from '../../../utils/date.js'
+import {dateFormat, parseDateString} from '../../../utils/date.js'
 import vis from 'vis'
 import '../../styles/color.css'
 import './index.scss'
 const position = [15.3, 134.6]
+// 请修改此处IP地址和webpack.config.js文件中allowedHosts的值，两者保持一致，都为本机IP，
+// 确保局域网中可以使用，host，port，ctx仅开发环境下使用，生产环境请酌情修改。
+const host = 'http://192.168.19.166'
+const port = '80'
+const ctx = host + ':' + port
 let lastTime
 /**
  * 格式化风圈数据
@@ -40,6 +45,9 @@ export default class Home extends React.Component {
       typhoonPointList: [],
       currentTyphoonName: null,
       selectedRowKeys: [],
+      timeLineSpeedLable: 1,
+      timeLineCurrentTime: '',
+      timeLineStar: true,
       yearsList: [
         {value: '2017', label: '2017'},
         {value: '2016', label: '2016'},
@@ -63,6 +71,7 @@ export default class Home extends React.Component {
     this.lableMarker = {} // 路径标注（标记台风名称）
     this.stormCircle = {} // 台风风圈
     this.timeLineQueue = [] // 时间轴队列
+    this.timeLineSpeed = 1000 // 默认1000ms
   }
   componentDidMount () {
     const ownerNode = ReactDOM.findDOMNode(this)
@@ -120,9 +129,10 @@ export default class Home extends React.Component {
       const bTime = parseDateString(ele.begin_time).getTime()
       if (bTime === time) {
         const {id} = ele
+        this.forecastLayers[id] = {}
         // 闭包放入队列
-        // ajax请求台风path数据
-        const dt = await md_ajax.get('http://127.0.0.1/path', {params: {id}})
+        // ajax请求台风path数据,使用async/await模式
+        const dt = await md_ajax.get(ctx + '/path', {params: {id}})
         const rst = dt.reverse().map((ele, index) => {
           ele._source.key = index
           const dateStr = ele._source.datetime
@@ -153,8 +163,9 @@ export default class Home extends React.Component {
     const _this = this
     return function () {
       if (index < data.length) {
+        // 此段代码和renderPolylineAndMarkerWithAction中代码可复用，暂不做复用
         if (_this.featureLayers[id]) {
-          // _this.reRenderForecastData(data[index], id)
+          _this.reRenderForecastData(data[index], id)
           const feaLys = _this.featureLayers[id]
           const poly = feaLys.getLayers()[0]
           const pos = [ data[index].latitude, data[index].longitude ]
@@ -165,7 +176,7 @@ export default class Home extends React.Component {
           const firstData = data.slice(0, 1)
           const feaLys = renderPolylineAndMarker(firstData)
           const labelIcon = L.divIcon({className: 'my-div-icon', html: `<div class="lable--name">${data[0].name_cn}</div>`})
-          // _this.reRenderForecastData(data[index], id)
+          _this.reRenderForecastData(data[index], id)
           _this.lysGrp.addLayer(feaLys).addTo(_this.map.leafletElement)
           _this.lableMarker[id] = L.marker([data[0].latitude, data[0].longitude], {icon: labelIcon})
           _this.stormCircle[id] = canvasOverlay([data[0].latitude, data[0].longitude], formatCircleData(data[0]))
@@ -176,6 +187,7 @@ export default class Home extends React.Component {
         index++
         return true
       } else {
+        _this.deletePolylineAndMarkerById(id)
         // 绘制完毕，清除闭包内存
         index = null
         data = null
@@ -184,9 +196,11 @@ export default class Home extends React.Component {
       }
     }
   }
+  /**
+   * 运行队列中的所有闭包，若返回false，则删除该成员
+   */
   runTimeLineClosure () {
     const queue = this.timeLineQueue
-    console.log(queue)
     for (let i = 0; i < queue.length; i++) {
       const ele = queue[i]
       const rst = ele()
@@ -194,18 +208,50 @@ export default class Home extends React.Component {
     }
   }
   /**
+   * 时间轴重置功能
+   */
+  rePlay () {
+    if (this.timelineIntervalID) {
+      clearInterval(this.timelineIntervalID)
+      const {typhoonList} = this.state
+      const typhoonYearData = JSON.parse(JSON.stringify(typhoonList)).reverse()
+      const currentTime = parseDateString(typhoonYearData[0].begin_time)
+      window.timeline.moveTo(currentTime, {animation: false})
+      window.timeline.setCurrentTime(currentTime)
+      this.handleClearAll()
+      this.setState({timeLineStar: true, timeLineCurrentTime: ''})
+    } else {
+      message.warning('暂未开始播放，无需重置！')
+    }
+  }
+  /**
+   * 时间轴播放核心业务代码
+   */
+  playTimeLine () {
+    const currentTime = lastTime
+    window.timeline.moveTo(currentTime, {animation: false})
+    window.timeline.setCurrentTime(currentTime)
+    this.compareTyphoonWithTime(currentTime)
+    lastTime = currentTime + 2 * 3600 * 1000  // 台风数据2小时一次
+    this.runTimeLineClosure()
+    const timeLineCurrentTime = dateFormat(currentTime, 'yyyy年MM月dd日hh时')
+    this.setState({timeLineCurrentTime})
+  }
+  /**
    * 时间轴面板开始按钮事件处理器
    * @param {Event} e 事件对象
    */
   handleTimeLineClick (e) {
-    setInterval(async() => {
-      const currentTime = lastTime
-      window.timeline.moveTo(currentTime)
-      window.timeline.setCurrentTime(currentTime)
-      await this.compareTyphoonWithTime(currentTime)
-      lastTime = currentTime + 2 * 3600 * 1000  // 台风数据2小时一次
-      this.runTimeLineClosure()
-    }, 500)
+    const {timeLineStar} = this.state
+    // 进入播放状态
+    if (timeLineStar) {
+      this.timelineIntervalID = setInterval(() => {
+        this.playTimeLine()
+      }, this.timeLineSpeed)
+    } else {
+      clearInterval(this.timelineIntervalID)
+    }
+    this.setState({timeLineStar: !timeLineStar})
   }
   /**
    * 设置时间线数据
@@ -224,31 +270,48 @@ export default class Home extends React.Component {
     }
     var options = {
       start: items._getItem(0).start,
-      // end: new Date(new Date().getTime() + 1000 * 100),
-      // locale:,
-      rollingMode: {
-        follow: true,
-        offset: 0.5
-      },
-      verticalScroll: true
-      // timeAxis: {
-      //   scale: 'hour',
-      //   step: 1
-      // }
+      maxHeight: 100
     }
     const fisrtTime = items._getItem(0).start.getTime()
     lastTime = fisrtTime
     window.timeline.setCurrentTime(fisrtTime)
-    // window.timeline.setOptions(options)
+    window.timeline.setOptions(options)
     window.timeline.setItems(items)
     // window.timeline.fit()
+  }
+  /**
+   * 快进/快退事件处理器
+   * @param {string} type 速度类型，值为backward（快退）或者forward（快进），默认forward
+   */
+  handleSpeedAjust (type) {
+    if (this.timelineIntervalID) {
+      let {timeLineSpeedLable} = this.state
+      if (type === 'backward') {
+        this.timeLineSpeed = this.timeLineSpeed * 2
+        timeLineSpeedLable--
+        if (timeLineSpeedLable < 0) {
+          timeLineSpeedLable = 0
+          this.timeLineSpeed = 1000
+        }
+      } else {
+        timeLineSpeedLable++
+        this.timeLineSpeed = this.timeLineSpeed / 2
+      }
+      clearInterval(this.timelineIntervalID)
+      this.timelineIntervalID = setInterval(() => {
+        this.playTimeLine()
+      }, this.timeLineSpeed)
+      this.setState({timeLineSpeedLable})
+    } else {
+      message.warning('请先开始播放！')
+    }
   }
   /**
    * 台风年限事件处理函数
    * @param {string} value 年
    */
   handleYearChange (value) {
-    md_ajax.get('http://127.0.0.1/list', {params: {year: value}})
+    md_ajax.get(ctx + '/list', {params: {year: value}})
     .then((data) => {
       const rst = data.map((ele, index) => { ele._source.key = ele._source.id; return ele._source })
       this.handleClearAll()
@@ -345,7 +408,7 @@ export default class Home extends React.Component {
         this.renderPolylineAndMarkerWithAction(this.map.leafletElement, rst, id)
         this.setState({typhoonPointList: rst, currentTyphoonName: name_cn, selectedRowKeys})
       } else {
-        md_ajax.get('http://127.0.0.1/path', {params: {id}})
+        md_ajax.get(ctx + '/path', {params: {id}})
         .then((data) => {
           const rst = data.reverse().map((ele, index) => {
             ele._source.key = index
@@ -381,6 +444,7 @@ export default class Home extends React.Component {
       this.setState({typhoonPointList: [], selectedRowKeys: filteredKeys, currentTyphoonName: null})
     }
   }
+
   /**
    * 台风选择事件处理函数
    * @param {Object} record 选择行的数据
@@ -447,7 +511,7 @@ export default class Home extends React.Component {
     }
   }
   render () {
-    const {rectRight, rectBottom, typhoonList, typhoonPointList, currentTyphoonName, selectedRowKeys} = this.state
+    const {rectRight, rectBottom, typhoonList, typhoonPointList, currentTyphoonName, selectedRowKeys, timeLineStar, timeLineSpeedLable, timeLineCurrentTime} = this.state
     const columns = [
       {
         title: '台风编号',
@@ -479,7 +543,16 @@ export default class Home extends React.Component {
         </Map>
         <div className='timeline-container'>
           <div className='timeline-controll'>
-            <Button onClick={this.handleTimeLineClick}>开始</Button>
+            <span className='lable'>操作：</span>
+            <Icon className='icon' onClick={this.handleTimeLineClick} type={timeLineStar ? 'play-circle' : 'pause-circle'} />
+            <Icon className='icon' type='fast-backward' onClick={() => this.handleSpeedAjust('backward')} />
+            <Icon className='icon' type='fast-forward' onClick={() => this.handleSpeedAjust('forward')} />
+            <Icon className='icon' type='retweet' onClick={() => { this.rePlay() }} />
+            <span className='lable'>当前速度:</span>
+            <span>{timeLineSpeedLable}x</span>
+            <span className='lable' style={{marginLeft: 15}}>当前时间:</span>
+            <span>{timeLineCurrentTime}</span>
+            <span className='notice'>请使用鼠标滚轮进行时间轴视图放大或缩小,鼠标左键可进行平移。</span>
           </div>
           <div className='timeline-content' id='timeline' />
         </div>

@@ -319,23 +319,36 @@ $prefix:'md-circleMarker';
     // overflow: auto;
     left: 50%;
     margin-left: -484px;
+    border-radius: 5px;
     .timeline-content,.timeline-controll{
     }
     .timeline-controll{
-        position: absolute;
-        width: 100px;
-        top: 0;
-        left: 0;
-        height: 100%;
-        background-color: #108ee9;
+        user-select: none;
+        height: 21px;
+        background-color: #e5e9f2;
         border-top-left-radius: 5px;
-        border-bottom-left-radius: 5px;
-        padding: 5px;
+        border-top-right-radius: 5px;
+        padding: 1px;
+        .icon{
+            display: inline-block;
+            margin-right: 24px;
+            padding: 3px;
+            border-radius: 2px;
+            &:hover{
+                cursor: pointer;
+                background-color: #bbbec3;
+            }
+        }
+        .lable{
+            padding-right: 5px
+        }
+        .notice{
+            color: #ef0a0a;
+            float: right;
+        }
     }
     .timeline-content{
-        width: 864px;
-        height: 106px;
+        height: 81px;
         overflow: auto;
-        margin-left: 105px;
     }
 }
