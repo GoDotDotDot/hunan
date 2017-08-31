@@ -14,7 +14,7 @@ import './index.scss'
 const position = [15.3, 134.6]
 // 请修改此处IP地址和webpack.config.js文件中allowedHosts的值，两者保持一致，都为本机IP，
 // 确保局域网中可以使用，host，port，ctx仅开发环境下使用，生产环境请酌情修改。
-const host = 'http://192.168.19.36'
+const host = 'http://192.168.19.166'
 const port = '80'
 const ctx = host + ':' + port
 let lastTime
@@ -147,7 +147,7 @@ export default class Home extends React.Component {
           const hour = String.prototype.substr.call(dateStr, 8, 2)
           const minute = String.prototype.substr.call(dateStr, 10, 2)
           const secend = String.prototype.substr.call(dateStr, 12, 2)
-          const date = new Date(year, month, day, hour, minute, secend)
+          const date = new Date(year, month - 1, day, hour, minute, secend)
           ele._source.datetimeLong = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
           ele._source.datetime = `${month}月${day}日${hour}时`
           ele._source.dateObject = date
@@ -168,7 +168,11 @@ export default class Home extends React.Component {
     let index = 0
     const _this = this
     return function () {
-      if (index < data.length) {
+      index = data.findIndex((ele, i, arr) => {
+        const dt = ele.dateObject.getTime()
+        return dt === lastTime
+      })
+      if (index !== -1) {
         // 此段代码和renderPolylineAndMarkerWithAction中代码可复用，暂不做复用
         if (_this.featureLayers[id]) {
           _this.reRenderForecastData(data[index], id)
@@ -192,20 +196,18 @@ export default class Home extends React.Component {
           _this.featureLayers[id] = feaLys
           _this.map.panTo(pos)
         }
-        index++
         return false
       } else {
-        _this.deleteLayersForTimeLine(id)
-        const idValue = id
         // 绘制完毕，清除闭包内存
         if (lastTime >= data[0].end_time) {
+          _this.deleteLayersForTimeLine(id)
+          const idValue = id
           index = null
           data = null
           id = null
-          return idValue
+          return idValue // 表示该闭包生命周期结束，用于清除队列
         }
         return false
-         // 表示该闭包生命周期结束，用于清除队列
       }
     }
   }
@@ -493,7 +495,7 @@ export default class Home extends React.Component {
             const hour = String.prototype.substr.call(dateStr, 8, 2)
             const minute = String.prototype.substr.call(dateStr, 10, 2)
             const secend = String.prototype.substr.call(dateStr, 12, 2)
-            const date = new Date(year, month, day, hour, minute, secend)
+            const date = new Date(year, month - 1, day, hour, minute, secend)
             ele._source.datetimeLong = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
             ele._source.datetime = `${month}月${day}日${hour}时`
             ele._source.dateObject = date
