@@ -14,7 +14,7 @@ import './index.scss'
 const position = [15.3, 134.6]
 // 请修改此处IP地址和webpack.config.js文件中allowedHosts的值，两者保持一致，都为本机IP，
 // 确保局域网中可以使用，host，port，ctx仅开发环境下使用，生产环境请酌情修改。
-const host = 'http://192.168.19.166'
+const host = 'http://192.168.19.36'
 const port = '80'
 const ctx = host + ':' + port
 let lastTime
@@ -62,6 +62,8 @@ export default class Home extends React.Component {
     this.handleTyphoonClick = this.handleTyphoonClick.bind(this)
     this.handleSelectAll = this.handleSelectAll.bind(this)
     this.handleTimeLineClick = this.handleTimeLineClick.bind(this)
+    this.clearTimeBlank = this.clearTimeBlank.bind(this)
+    this.deleteLayersForTimeLine = this.deleteLayersForTimeLine.bind(this)
 
     this.hasSearchTyphoonData = {} // 保存已查询的数据
     this.currentId = null // 当前选择的台风编号
@@ -74,6 +76,11 @@ export default class Home extends React.Component {
     this.timeLineSpeed = 1000 // 默认1000ms
   }
   componentDidMount () {
+    this.map = L.map('map').setView(position, 5)
+
+    L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(this.map)
     const ownerNode = ReactDOM.findDOMNode(this)
     const nodeHeight = outerHeight(ownerNode)
     const nodeWidth = outerWidth(ownerNode)
@@ -89,10 +96,8 @@ export default class Home extends React.Component {
     //   format: 'tiles',
     //   tilematrixSet: 'c',
     //   style: 'default'})
-    // this.map.leafletElement.addLayer(wmtsLyr)
-    L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(this.map.leafletElement)
+    // this.map.addLayer(wmtsLyr)
+
     // timeline start
     const container = document.getElementById('timeline')
 
@@ -128,7 +133,7 @@ export default class Home extends React.Component {
       // 时间戳对比
       const bTime = parseDateString(ele.begin_time).getTime()
       if (bTime === time) {
-        const {id} = ele
+        const {id, end_time} = ele
         this.forecastLayers[id] = {}
         // 闭包放入队列
         // ajax请求台风path数据,使用async/await模式
@@ -146,10 +151,11 @@ export default class Home extends React.Component {
           ele._source.datetimeLong = `${year}年${month}月${day}日${hour}时${minute}分${secend}秒`
           ele._source.datetime = `${month}月${day}日${hour}时`
           ele._source.dateObject = date
+          ele._source.end_time = parseDateString(end_time).getTime()
           return ele._source
         })
         this.timeLineQueue.push(this.timeLineClosure(rst, id))
-        return true
+        // return true
       }
     }
   }
@@ -177,22 +183,29 @@ export default class Home extends React.Component {
           const feaLys = renderPolylineAndMarker(firstData)
           const labelIcon = L.divIcon({className: 'my-div-icon', html: `<div class="lable--name">${data[0].name_cn}</div>`})
           _this.reRenderForecastData(data[index], id)
-          _this.lysGrp.addLayer(feaLys).addTo(_this.map.leafletElement)
-          _this.lableMarker[id] = L.marker([data[0].latitude, data[0].longitude], {icon: labelIcon})
-          _this.stormCircle[id] = canvasOverlay([data[0].latitude, data[0].longitude], formatCircleData(data[0]))
+          _this.lysGrp.addLayer(feaLys).addTo(_this.map)
+          const pos = [data[0].latitude, data[0].longitude]
+          _this.lableMarker[id] = L.marker(pos, {icon: labelIcon})
+          _this.stormCircle[id] = canvasOverlay(pos, formatCircleData(data[0]))
           _this.lysGrp.addLayer(_this.stormCircle[id])
           _this.lysGrp.addLayer(_this.lableMarker[id])
           _this.featureLayers[id] = feaLys
+          _this.map.panTo(pos)
         }
         index++
-        return true
+        return false
       } else {
-        _this.deletePolylineAndMarkerById(id)
+        _this.deleteLayersForTimeLine(id)
+        const idValue = id
         // 绘制完毕，清除闭包内存
-        index = null
-        data = null
-        id = null
-        return false // 表示该闭包生命周期结束，用于清除队列
+        if (lastTime >= data[0].end_time) {
+          index = null
+          data = null
+          id = null
+          return idValue
+        }
+        return false
+         // 表示该闭包生命周期结束，用于清除队列
       }
     }
   }
@@ -204,15 +217,52 @@ export default class Home extends React.Component {
     for (let i = 0; i < queue.length; i++) {
       const ele = queue[i]
       const rst = ele()
-      rst || queue.splice(i, 1)
+      if (rst) {
+        queue.splice(i, 1)
+        if (queue.length < 1) {
+          this.clearTimeBlank(rst)
+        }
+      }
+    }
+  }
+  /**
+   * 跳过计时器时间空白区域
+   * @param {*} id
+   */
+  clearTimeBlank (id) {
+    const {typhoonList} = this.state
+    const index = typhoonList.findIndex((element, index, array) => id === element.id)
+    if (index !== -1) {
+      let currentIndexValue = index
+      let nextIndexValue = currentIndexValue - 1
+      while (nextIndexValue >= 0) {
+        const currentEndTime = parseDateString(typhoonList[currentIndexValue].end_time).getTime()
+        const nextStartTime = parseDateString(typhoonList[nextIndexValue].begin_time).getTime()
+        if (nextStartTime >= currentEndTime) {
+          lastTime = nextStartTime
+          break
+          // window.timeline.moveTo(currentTime, {animation: false})
+          // window.timeline.setCurrentTime(currentTime)
+        } else {
+          nextIndexValue--
+        }
+      }
+
+      console.log(currentIndexValue)
+      console.log(nextIndexValue)
+      /* if (nextIndexValue < 0) {
+
+      } */
     }
   }
   /**
    * 时间轴重置功能
+   * @param {boolean} tips 是否显示提示，默认显示
    */
-  rePlay () {
+  rePlay (tips = true) {
     if (this.timelineIntervalID) {
       clearInterval(this.timelineIntervalID)
+      this.timeLineQueue = []
       const {typhoonList} = this.state
       const typhoonYearData = JSON.parse(JSON.stringify(typhoonList)).reverse()
       const currentTime = parseDateString(typhoonYearData[0].begin_time).getTime()
@@ -221,7 +271,7 @@ export default class Home extends React.Component {
       window.timeline.setCurrentTime(currentTime)
       this.handleClearAll()
       this.setState({timeLineStar: true, timeLineCurrentTime: ''})
-    } else {
+    } else if (tips) {
       message.warning('暂未开始播放，无需重置！')
     }
   }
@@ -233,8 +283,8 @@ export default class Home extends React.Component {
     window.timeline.moveTo(currentTime, {animation: false})
     window.timeline.setCurrentTime(currentTime)
     this.compareTyphoonWithTime(currentTime)
+    lastTime = currentTime + 1 * 3600 * 1000  // 台风数据2小时一次
     this.runTimeLineClosure()
-    lastTime = currentTime + 2 * 3600 * 1000  // 台风数据2小时一次
     const timeLineCurrentTime = dateFormat(currentTime, 'yyyy年MM月dd日hh时')
     this.setState({timeLineCurrentTime})
   }
@@ -270,8 +320,8 @@ export default class Home extends React.Component {
       })
     }
     var options = {
-      start: items._getItem(0).start,
-      maxHeight: 100
+      start: items._getItem(0).start
+      // maxHeight: 100
     }
     const fisrtTime = items._getItem(0).start.getTime()
     lastTime = fisrtTime
@@ -318,6 +368,7 @@ export default class Home extends React.Component {
       this.handleClearAll()
       this.setState({typhoonList: rst}, () => {
         // 时间轴业务 开始
+        this.rePlay(false)
         const typhoonYearData = JSON.parse(JSON.stringify(rst)).reverse()
         this.setTimeLineData(typhoonYearData)
         // 时间轴业务 结束
@@ -389,9 +440,31 @@ export default class Home extends React.Component {
     const stormCircle = this.stormCircle[id]
     const forecastLys = this.forecastLayers[id].all
     forecastLys && this.lysGrp.removeLayer(forecastLys)
-    this.lysGrp.removeLayer(feaLys)
-    this.lysGrp.removeLayer(stormCircle)
-    this.lysGrp.removeLayer(lableMarker)
+    feaLys && this.lysGrp.removeLayer(feaLys)
+    stormCircle && this.lysGrp.removeLayer(stormCircle)
+    lableMarker && this.lysGrp.removeLayer(lableMarker)
+  }
+  /**
+   * 时间线删除部分图层（只保留实线和标注）
+   * @param {string} id 台风编号
+   */
+  deleteLayersForTimeLine (id) {
+    const stormCircle = this.stormCircle[id]
+    const forecastLys = this.forecastLayers[id].all
+    this.deletePoint(id)
+    forecastLys && this.lysGrp.removeLayer(forecastLys)
+    stormCircle && this.lysGrp.removeLayer(stormCircle)
+  }
+  /**
+   * 删除点
+   * @param {string} id 台风编号
+   */
+  deletePoint (id) {
+    const feaLys = this.featureLayers[id]
+    const layers = feaLys ? feaLys.getLayers() : []
+    for (let i = 1; i < layers.length; i++) {
+      this.featureLayers[id].removeLayer(layers[i])
+    }
   }
   /**
    * 选择台风事件处理函数
@@ -406,7 +479,7 @@ export default class Home extends React.Component {
       selectedRowKeys.push(record.key)
       if (this.hasSearchTyphoonData[id]) {
         const rst = this.hasSearchTyphoonData[id]
-        this.renderPolylineAndMarkerWithAction(this.map.leafletElement, rst, id)
+        this.renderPolylineAndMarkerWithAction(this.map, rst, id)
         this.setState({typhoonPointList: rst, currentTyphoonName: name_cn, selectedRowKeys})
       } else {
         md_ajax.get(ctx + '/path', {params: {id}})
@@ -429,7 +502,7 @@ export default class Home extends React.Component {
           this.currentId = id
           this.hasSearchTyphoonData[id] = rst
           this.setState({typhoonPointList: rst, currentTyphoonName: name_cn, selectedRowKeys})
-          this.renderPolylineAndMarkerWithAction(this.map.leafletElement, rst, id)
+          this.renderPolylineAndMarkerWithAction(this.map, rst, id)
         })
       }
     } else {
@@ -539,9 +612,10 @@ export default class Home extends React.Component {
     ]
     return (
       <div style={{height: '100vh', boxSizing: 'border-box', overflow: 'hidden', paddingTop: 56}} id='md-window'>
-        <Map center={position} zoom={5} className='md-map--container' ref={(ref) => { this.map = ref }} attributionControl={false}>
+        {/* <Map center={this.state.position} zoom={5} className='md-map--container' ref={(ref) => { this.map = ref }} attributionControl={false}>
           <AttributionControl prefix={'<a target="_blank" href="http://metedesign.xyz/">SuperMap MeteDesign</a>'} position='bottomleft' />
-        </Map>
+        </Map> */}
+        <div id='map' className='md-map--container' />
         <div className='timeline-container'>
           <div className='timeline-controll'>
             <span className='lable'>操作：</span>

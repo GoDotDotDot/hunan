@@ -312,7 +312,7 @@ $prefix:'md-circleMarker';
 .timeline-container{
     position: absolute;
     bottom: 21px;
-    height: 106px;
+    // height: 106px;
     width: 968px;
     z-index: 9999999;
     background: #fff;
@@ -348,7 +348,7 @@ $prefix:'md-circleMarker';
         }
     }
     .timeline-content{
-        height: 81px;
+        height:150px;
         overflow: auto;
     }
 }

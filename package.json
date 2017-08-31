@@ -63,6 +63,7 @@
   "dependencies": {
     "animejs": "^2.0.2",
     "antd": "^2.12.5",
+    "babel-preset-es2015": "^6.24.1",
     "babel-runtime": "^6.23.0",
     "bundle-loader": "^0.5.5",
     "classnames": "^2.2.5",
