@@ -14,9 +14,10 @@ import './index.scss'
 const position = [15.3, 134.6]
 // 请修改此处IP地址和webpack.config.js文件中allowedHosts的值，两者保持一致，都为本机IP，
 // 确保局域网中可以使用，host，port，ctx仅开发环境下使用，生产环境请酌情修改。
-const host = 'http://192.168.19.166'
+const host = 'http://192.168.19.36'
 const port = '80'
 const ctx = host + ':' + port
+const latlogObject = {}
 let lastTime
 /**
  * 格式化风圈数据
@@ -182,6 +183,7 @@ export default class Home extends React.Component {
           poly.addLatLng(pos)
           feaLys.addLayer(renderCircleMarker(pos, data[index]))
           _this.stormCircle[id].setData(pos, formatCircleData(data[index]))
+          _this.setViewForTimeLine(id, pos)
         } else {
           const firstData = data.slice(0, 1)
           const feaLys = renderPolylineAndMarker(firstData)
@@ -194,13 +196,15 @@ export default class Home extends React.Component {
           _this.lysGrp.addLayer(_this.stormCircle[id])
           _this.lysGrp.addLayer(_this.lableMarker[id])
           _this.featureLayers[id] = feaLys
-          _this.map.panTo(pos)
+          _this.setViewForTimeLine(id, pos)
+          canvasOverlay(pos, 120)
         }
         return false
       } else {
         // 绘制完毕，清除闭包内存
         if (lastTime >= data[0].end_time) {
           _this.deleteLayersForTimeLine(id)
+          // latlogObject[id] = null
           const idValue = id
           index = null
           data = null
@@ -236,9 +240,15 @@ export default class Home extends React.Component {
     const index = typhoonList.findIndex((element, index, array) => id === element.id)
     if (index !== -1) {
       let currentIndexValue = index
+      const currentEndTime = parseDateString(typhoonList[currentIndexValue].end_time).getTime()
+      if (currentIndexValue === 0 && lastTime >= currentEndTime) {
+        clearInterval(this.timelineIntervalID)
+        this.setState({timeLineStar: true})
+        message.success('该年度台风动画已播放完毕！')
+      }
       let nextIndexValue = currentIndexValue - 1
+
       while (nextIndexValue >= 0) {
-        const currentEndTime = parseDateString(typhoonList[currentIndexValue].end_time).getTime()
         const nextStartTime = parseDateString(typhoonList[nextIndexValue].begin_time).getTime()
         if (nextStartTime >= currentEndTime) {
           lastTime = nextStartTime
@@ -249,12 +259,26 @@ export default class Home extends React.Component {
           nextIndexValue--
         }
       }
-
-      console.log(currentIndexValue)
-      console.log(nextIndexValue)
-      /* if (nextIndexValue < 0) {
-
-      } */
+    }
+  }
+  /**
+   * 时间轴改变视图
+   * @param {string} id 台风编号
+   */
+  setViewForTimeLine (id, pos) {
+    const alignment = this.timeLineQueue
+    if (alignment.length > 1) {
+      latlogObject[id] = pos
+      const temp = []
+      for (let key in latlogObject) {
+        if (latlogObject.hasOwnProperty(key)) {
+          let element = latlogObject[key]
+          temp.push(element)
+        }
+      }
+      this.map.fitBounds(temp)
+    } else {
+      this.map.panTo(pos)
     }
   }
   /**
@@ -509,7 +533,7 @@ export default class Home extends React.Component {
       }
     } else {
       const {selectedRowKeys} = this.state
-      delete this.hasSearchTyphoonData[record.id]
+      this.hasSearchTyphoonData[record.id] = null
       const filteredKeys = selectedRowKeys.filter((ele) => ele !== record.key)
       if (record.id === this.currentId) {
 
